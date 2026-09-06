@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { CalendarDays, Clock, MapPin, BarChart3 } from 'lucide-react';
+import { CalendarDays, Clock, MapPin, BarChart3, History } from 'lucide-react';
 import type { ScheduleData, Match } from '../types';
 import { computeStandings, rankStandings } from '../standings';
 
@@ -13,18 +13,64 @@ export default function ScheduleStandings({ schedule, isAdmin, onUpdateScore }: 
   const standings = useMemo(() => computeStandings(schedule.matches), [schedule.matches]);
   const ranked = useMemo(() => rankStandings(standings), [standings]);
 
+  // Group schedule into Active (Today + Future + Most Recent Past) and Archived
+  const { activeMatches, archivedMatches } = useMemo(() => {
+    const d = new Date();
+    const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+    // Find all unique dates and sort them chronologically
+    const allDates = Array.from(new Set(schedule.matches.map(m => m.date_str))).sort();
+    const pastDates = allDates.filter(date => date < todayStr);
+    
+    // Identify the single most recent past date
+    const mostRecentPastDate = pastDates.length > 0 ? pastDates[pastDates.length - 1] : null;
+
+    const active: Match[] = [];
+    const archived: Match[] = [];
+
+    schedule.matches.forEach(m => {
+      // Keep today, future games, and the single most recent past game in the Active list
+      if (m.date_str >= todayStr || m.date_str === mostRecentPastDate) {
+        active.push(m);
+      } else {
+        archived.push(m);
+      }
+    });
+
+    return { activeMatches: active, archivedMatches: archived };
+  }, [schedule.matches]);
+
   return (
     <div className="space-y-8">
       <StandingsTable ranked={ranked} />
 
       <div>
-        <h3 className="mb-3 text-lg font-semibold text-slate-800">Matches</h3>
+        <h3 className="mb-3 text-lg font-semibold text-slate-800">Active Matches</h3>
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {schedule.matches.map((m) => (
+          {activeMatches.map((m) => (
             <MatchCard key={m.id} match={m} isAdmin={isAdmin} onUpdateScore={onUpdateScore} />
           ))}
+          {activeMatches.length === 0 && (
+            <div className="col-span-full rounded-lg border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
+              No active matches scheduled.
+            </div>
+          )}
         </div>
       </div>
+
+      {archivedMatches.length > 0 && (
+        <div className="mt-8 pt-6 border-t border-slate-200">
+          <div className="mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-500">
+            <History className="h-4 w-4" />
+            Archived Past Matches
+          </div>
+          <div className="grid grid-cols-1 gap-4 opacity-75 transition-opacity hover:opacity-100 lg:grid-cols-2">
+            {archivedMatches.map((m) => (
+              <MatchCard key={m.id} match={m} isAdmin={isAdmin} onUpdateScore={onUpdateScore} />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

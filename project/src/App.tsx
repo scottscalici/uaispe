@@ -21,8 +21,9 @@ import TeamCreator from './components/TeamCreator';
 import UnitScheduleBuilder from './components/UnitScheduleBuilder';
 import Leaderboards from './components/Leaderboards';
 import WorkoutPlayer from './components/WorkoutPlayer';
+import MasterCalendarBuilder from './components/MasterCalendarBuilder';
 
-type AdminView = 'teams' | 'schedule' | 'attendance' | 'grades' | 'roster' | 'teamcreator' | 'builder';
+type AdminView = 'teams' | 'schedule' | 'attendance' | 'grades' | 'roster' | 'teamcreator' | 'calendar'| 'builder';
 type PublicView = 'syllabus' | 'dashboard' | 'leaderboards' | 'workout';
 
 const allPlayerIds = (c: ClassData): string[] => c.roster?.map((p) => p.id) || [];
@@ -325,6 +326,7 @@ export default function App() {
               <NavButton active={adminView === 'roster'} onClick={() => setAdminView('roster')} icon={<ClipboardList className="h-4 w-4" />}>Roster</NavButton>
               <NavButton active={adminView === 'teamcreator'} onClick={() => setAdminView('teamcreator')} icon={<Wand2 className="h-4 w-4" />}>Generator</NavButton>
               <NavButton active={adminView === 'builder'} onClick={() => setAdminView('builder')} icon={<Grid3x3 className="h-4 w-4" />}>Builder</NavButton>
+              <NavButton active={adminView === 'calendar'} onClick={() => setAdminView('calendar')} icon={<CalendarDays className="h-4 w-4" />}>Calendar</NavButton>
             </nav>
           ) : (
             <nav className="flex gap-2">
@@ -357,8 +359,9 @@ export default function App() {
               : adminView === 'grades' ? <DailyGrades key={`grades-${unit.unit_id}`} roster={roster} unit={unit} logs={logs} quarterHistory={quarterHistory} />
               : adminView === 'roster' ? <RosterManager key={`roster-${activeClassId}`} roster={roster} unit={unit} floorGrid={floorGrid} classId={activeClassId} onAddPlayer={handleAddPlayer} onBulkAddPlayers={handleBulkAddPlayers} onUpdatePlayer={handleUpdatePlayer} onDeletePlayer={handleDeletePlayer} onUpdateFloorGrid={(g) => updateClass((c) => ({ ...c, floorGrid: g }))} />
               : adminView === 'teamcreator' ? <TeamCreator key={`tc-${unit.unit_id}`} roster={roster} unit={unit} onGenerate={handleGenerateTeams} onMovePlayer={handleMovePlayer} />
-              : <UnitScheduleBuilder key={`builder-${unit.unit_id}`} unitName={unit.unit_name} onUpdateUnitName={handleUpdateUnitName} syllabus={syllabus} schedule={schedule} teamNames={teamNames} onUpdateSyllabus={handleUpdateSyllabus} onAddMatch={handleAddMatch} onDeleteMatch={handleDeleteMatch} />}
-              
+              : adminView === 'calendar' ? <MasterCalendarBuilder key={`cal-${activeClassId}`} calendar={activeClass.masterCalendar || []} classId={activeClassId} onSave={(cal) => updateClass(c => ({ ...c, masterCalendar: cal }))} />
+                            : <UnitScheduleBuilder key={`builder-${unit.unit_id}`} unitName={unit.unit_name} onUpdateUnitName={handleUpdateUnitName} syllabus={syllabus} schedule={schedule} teamNames={teamNames} onUpdateSyllabus={handleUpdateSyllabus} onAddMatch={handleAddMatch} onDeleteMatch={handleDeleteMatch} />}
+
               {/* DANGER ZONE - Only visible inside the Builder tab */}
               {adminView === 'builder' && (
                 <div className="mt-16 border-t border-red-200 pt-8 pb-8">
@@ -372,8 +375,17 @@ export default function App() {
                 </div>
               )}
             </>
-          ) : publicView === 'workout' ? <WorkoutPlayer />
-            : publicView === 'syllabus' ? <UnitSyllabus key={`syl-${unit.unit_id}`} syllabus={syllabus} unitName={unit.unit_name} />
+       ) : publicView === 'workout' ? (
+              <WorkoutPlayer 
+                key={`workout-${activeClassId}`} 
+                calendar={activeClass.masterCalendar || []} 
+                units={activeClass.units || []} 
+                onNavigateToUnit={(unitId) => {
+                  updateClass(c => ({ ...c, activeUnitId: unitId }));
+                  setPublicView('dashboard');
+                }} 
+              />
+          ) : publicView === 'syllabus' ? <UnitSyllabus key={`syl-${unit.unit_id}`} syllabus={syllabus} unitName={unit.unit_name} />
             : <PublicDashboard key={`pub-${unit.unit_id}`} unit={unit} schedule={schedule} />
           }
         </div>

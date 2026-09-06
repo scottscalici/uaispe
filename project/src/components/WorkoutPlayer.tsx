@@ -1,117 +1,182 @@
 import { useState, useMemo } from 'react';
-import { Lock } from 'lucide-react';
-import type { CalendarDay } from '../types';
+import { Lock, ArrowRight, History, CalendarDays } from 'lucide-react';
+import type { CalendarDay, UnitData } from '../types';
 
-// Hardcoded calendar structure matching your previous setups
-const myCalendar: CalendarDay[] = [
-  { fecha: "2026-09-04", ciclo: null, dia: null, status: "no-school", note: "", manualOverride: false },
-  { fecha: "2026-09-07", ciclo: null, dia: null, status: "no-school", note: "", manualOverride: false },
-  { fecha: "2026-09-08", ciclo: null, dia: null, status: "no-class", note: "Full AMES Day", manualOverride: true },
-  { fecha: "2026-09-09", ciclo: "A", dia: 3, status: "school", note: "", manualOverride: true },
-  { fecha: "2026-09-10", ciclo: "B", dia: 3, status: "school", note: "", manualOverride: true },
-  { fecha: "2026-09-11", ciclo: "A", dia: 4, status: "school", note: "", manualOverride: false },
-  { fecha: "2026-09-14", ciclo: "B", dia: 4, status: "school", note: "", manualOverride: false },
-  { fecha: "2026-09-15", ciclo: "A", dia: 5, status: "school", note: "", manualOverride: false },
-  { fecha: "2026-09-16", ciclo: null, dia: null, status: "in-person-pd", note: "", manualOverride: false },
-  { fecha: "2026-09-17", ciclo: "B", dia: 5, status: "school", note: "", manualOverride: false },
-  { fecha: "2026-09-18", ciclo: "A", dia: 6, status: "school", note: "", manualOverride: false },
-  { fecha: "2026-09-21", ciclo: "B", dia: 6, status: "school", note: "", manualOverride: false },
-  { fecha: "2026-09-22", ciclo: "A", dia: 7, status: "school", note: "", manualOverride: false },
-  { fecha: "2026-09-23", ciclo: "B", dia: 7, status: "school", note: "", manualOverride: false }
-];
+interface Props {
+  calendar: CalendarDay[];
+  units: UnitData[]; 
+  onNavigateToUnit: (unitId: string) => void;
+}
 
-export default function WorkoutPlayer() {
-  const [cycle, setCycle] = useState<'A' | 'B'>('A');
+type CycleFilter = 'A' | 'B' | 'All';
 
-  const tableData = useMemo(() => {
-    const cycleDays = myCalendar.filter(d => d.ciclo === cycle && d.dia !== null);
+export default function WorkoutPlayer({ calendar = [], units = [], onNavigateToUnit }: Props) {
+  const [cycle, setCycle] = useState<CycleFilter>('All');
+
+  const { activeData, archivedData } = useMemo(() => {
+    // 1. Filter out non-class days and apply the A/B/All toggle
+    const validDays = calendar.filter(d => 
+      (cycle === 'All' || d.ciclo === cycle) && 
+      (d.status === 'school' || d.status === 'half-day')
+    );
     
-    // Simulate "today" to September 9th for testing the 7-day lock
-    const simulatedTodayStr = "2026-09-09";
-    const todayDateObj = new Date(simulatedTodayStr + 'T00:00:00');
+    // 2. Determine "today" to calculate past vs future dynamically
+    const d = new Date();
+    const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const todayDateObj = new Date(todayStr + 'T00:00:00');
 
-    let upcoming = cycleDays.filter(d => d.fecha >= simulatedTodayStr);
-    let past = cycleDays.filter(d => d.fecha < simulatedTodayStr);
-
-    upcoming.sort((a, b) => a.fecha.localeCompare(b.fecha));
-    past.sort((a, b) => a.fecha.localeCompare(b.fecha));
-
-    return [...upcoming, ...past].map(calEntry => {
-      const isPast = calEntry.fecha < simulatedTodayStr;
+    // 3. Process the data (locking, linking) and sort chronologically overall
+    const processedDays = validDays.map(calEntry => {
+      const isPast = calEntry.fecha < todayStr;
       
       const eventDate = new Date(calEntry.fecha + 'T00:00:00'); 
       const diffTime = eventDate.getTime() - todayDateObj.getTime();
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      // Lock content if it's more than 7 days in the future
       const isLocked = diffDays > 7;
 
-      // Placeholder data mapping (Since we don't have your external JSON loaded here, we provide fallbacks)
-      let unitName = "Current Class Unit";
-      let workoutName = "Class Warmup & Gameplay";
+      const unitName = calEntry.unitName || "No Unit Scheduled";
+      const workoutName = calEntry.activity || calEntry.note || "Regular Class Routine";
+
+      // Check if the typed unitName matches an actual loaded unit to create a smart link
+      const linkedUnit = units.find(u => u.unit.unit_name.toLowerCase() === unitName.toLowerCase());
 
       return {
         ...calEntry,
         isPast,
         isLocked,
         unitName,
-        workoutName
+        workoutName,
+        linkedUnitId: linkedUnit?.id || null
       };
-    });
-  }, [cycle]);
+    }).sort((a, b) => a.fecha.localeCompare(b.fecha)); // Chronological sort (oldest to newest)
+
+    // 4. Split into Active and Archived
+    const pastDays = processedDays.filter(d => d.fecha < todayStr);
+    const futureDays = processedDays.filter(d => d.fecha >= todayStr);
+
+    let mostRecentPast = null;
+    let archived = [];
+
+    if (pastDays.length > 0) {
+      // The last item in the chronological past array is the most recent past class
+      mostRecentPast = pastDays[pastDays.length - 1];
+      // Everything before it goes to the archive (keeping Day 1, Day 2 order)
+      archived = pastDays.slice(0, pastDays.length - 1);
+    }
+
+    // Active list: single most recent class on top, followed by today and future classes
+    const active = mostRecentPast ? [mostRecentPast, ...futureDays] : [...futureDays];
+
+    return { activeData: active, archivedData: archived };
+  }, [cycle, calendar, units]);
+
+  if (calendar.length === 0) {
+    return (
+      <div className="p-10 text-center text-slate-500 bg-white rounded-xl shadow-sm border border-slate-200">
+        <h2 className="text-xl font-bold mb-2">No Calendar Data</h2>
+        <p>The Master Calendar has not been configured in the Admin portal yet.</p>
+      </div>
+    );
+  }
+
+  // Helper function to render a table row so we don't duplicate the JSX code
+  const renderRow = (row: typeof activeData[0], i: number) => (
+    <tr key={i} className={`transition hover:bg-slate-50 ${row.isPast ? 'opacity-60 bg-slate-50/50' : ''}`}>
+      <td className="p-4 font-bold text-blue-700 w-[20%] align-top">
+        Day {row.dia} ({row.ciclo})
+        <div className="text-xs font-normal text-slate-400 mt-0.5">{row.fecha}</div>
+        {row.note && !row.activity && <div className="text-xs font-bold text-amber-600 mt-1">{row.note}</div>}
+      </td>
+      <td className="p-4 w-[40%] font-bold text-slate-800 align-top">
+        {row.isLocked ? (
+          <span className="text-slate-400 italic flex items-center gap-1.5"><Lock className="w-3.5 h-3.5" /> {row.unitName}</span>
+        ) : row.linkedUnitId ? (
+          <button 
+            onClick={() => onNavigateToUnit(row.linkedUnitId!)}
+            className="text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 transition"
+            title={`Go to ${row.unitName} Dashboard`}
+          >
+            {row.unitName} <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        ) : (
+          <span className="text-slate-700">{row.unitName}</span>
+        )}
+      </td>
+      <td className="p-4 w-[40%] text-slate-700 align-top">
+        {row.isLocked ? (
+          <span className="text-slate-400 italic">{row.workoutName}</span>
+        ) : (
+          <span className="text-slate-800 font-medium">{row.workoutName}</span>
+        )}
+      </td>
+    </tr>
+  );
 
   return (
     <div className="mx-auto max-w-4xl bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-      <h1 className="text-center text-3xl font-black text-blue-700 mb-6">Daily Class Log</h1>
+      <h1 className="text-center text-3xl font-black text-blue-700 mb-6 flex items-center justify-center gap-3">
+        <CalendarDays className="h-8 w-8 text-blue-600" /> Daily Class Log
+      </h1>
       
-      <div className="flex justify-center gap-3 mb-6">
-        <button 
-          onClick={() => setCycle('A')} 
-          className={`px-6 py-2 rounded-lg font-bold transition ${cycle === 'A' ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-        >
-          A Day Schedule
-        </button>
-        <button 
-          onClick={() => setCycle('B')} 
-          className={`px-6 py-2 rounded-lg font-bold transition ${cycle === 'B' ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-        >
-          B Day Schedule
-        </button>
+      <div className="flex justify-center mb-6">
+        <div className="flex bg-slate-100 p-1.5 rounded-lg border border-slate-200">
+          {(['All', 'A', 'B'] as CycleFilter[]).map((c) => (
+            <button 
+              key={c}
+              onClick={() => setCycle(c)} 
+              className={`px-6 py-2 rounded-md font-bold text-sm transition-all ${
+                cycle === c 
+                  ? 'bg-blue-600 text-white shadow-md' 
+                  : 'bg-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              {c === 'All' ? 'All Days' : `${c} Day`}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 text-slate-500 uppercase text-xs">
             <tr>
-              <th className="p-4 border-b">Day</th>
-              <th className="p-4 border-b">Unit</th>
-              <th className="p-4 border-b">Workout</th>
+              <th className="p-4 border-b">Day / Date</th>
+              <th className="p-4 border-b">Unit Topic</th>
+              <th className="p-4 border-b">Workout / Activity</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {tableData.map((row, i) => (
-              <tr key={i} className={`transition hover:bg-slate-50 ${row.isPast ? 'opacity-60' : ''}`}>
-                <td className="p-4 font-bold text-blue-700 w-[15%]">
-                  Day {row.dia}
-                  <div className="text-xs font-normal text-slate-400">{row.fecha}</div>
-                </td>
-                <td className="p-4 w-[42.5%] font-bold text-slate-800">
-                  {row.isLocked ? (
-                    <span className="text-slate-400 italic flex items-center gap-1.5"><Lock className="w-3.5 h-3.5" /> {row.unitName}</span>
-                  ) : (
-                    <span className="text-blue-600">{row.unitName}</span>
-                  )}
-                </td>
-                <td className="p-4 w-[42.5%] text-slate-700">
-                  {row.isLocked ? (
-                    <span className="text-slate-400 italic">{row.workoutName}</span>
-                  ) : (
-                    <span className="text-slate-800 font-medium">{row.workoutName}</span>
-                  )}
+            {/* Active Classes */}
+            {activeData.map((row, i) => renderRow(row, i))}
+            {activeData.length === 0 && (
+              <tr>
+                <td colSpan={3} className="p-8 text-center text-slate-400 italic">
+                  No upcoming classes scheduled.
                 </td>
               </tr>
-            ))}
+            )}
           </tbody>
         </table>
       </div>
+
+      {/* Archived Classes Details Toggle */}
+      {archivedData.length > 0 && (
+        <details className="group mt-8 border-t border-slate-200 pt-6">
+          <summary className="flex cursor-pointer items-center justify-center gap-2 text-slate-500 font-bold uppercase tracking-wider text-xs hover:text-slate-800 transition-colors list-none bg-slate-50 py-3 rounded-lg border border-slate-200">
+            <History className="h-4 w-4" />
+            View Archived Past Classes
+          </summary>
+          <div className="mt-4 overflow-x-auto border border-slate-200 rounded-lg">
+            <table className="w-full text-left text-sm">
+              <tbody className="divide-y divide-slate-100 bg-slate-50/50">
+                {archivedData.map((row, i) => renderRow(row, i))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      )}
     </div>
   );
 }

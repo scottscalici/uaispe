@@ -7,7 +7,7 @@ import {
 import { db } from './firebase';
 import type { ClassData } from './types';
 import { initialClasses } from './data';
-
+import { centralDb } from './firebase';
 const CLASSES_COLLECTION = 'pe_classes';
 const META_DOC = 'app_meta';
 
@@ -90,7 +90,33 @@ export async function loadAllClasses(): Promise<ClassData[]> {
   }
   return result;
 }
-
+export async function fetchCentralCalendar() {
+  try {
+    const docRef = doc(centralDb, 'config', 'academic_year_2026_2027');
+    const docSnap = await getDoc(docRef);
+    
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      const centralDays = data.map || []; 
+      
+      // Format the data to perfectly match your PE app's CalendarDay interface
+      return centralDays.map((day: any) => ({
+        fecha: day.fecha,
+        ciclo: day.ciclo,
+        dia: day.dia,
+        status: day.status,
+        note: day.note,
+        manualOverride: day.manualOverride,
+        unitName: "",
+        activity: ""
+      }));
+    }
+    return [];
+  } catch (error) {
+    console.error("Error fetching central calendar:", error);
+    return [];
+  }
+}
 function stripUndefined(obj: unknown): unknown {
   return JSON.parse(JSON.stringify(obj));
 }

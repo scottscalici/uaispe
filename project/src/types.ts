@@ -20,6 +20,14 @@ export interface CalendarDay {
   status: string;
   note: string;
   manualOverride: boolean;
+  unitName?: string;
+  activity?: string;
+}
+
+export interface ClassData {
+  id: string;
+  // ... keep existing properties
+  masterCalendar?: CalendarDay[]; 
 }
 
 export interface Team {
