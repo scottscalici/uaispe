@@ -1,31 +1,37 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Lock, ArrowRight, History, CalendarDays } from 'lucide-react';
 import type { CalendarDay, UnitData } from '../types';
 
 interface Props {
   calendar: CalendarDay[];
   units: UnitData[]; 
+  classId: string;
   onNavigateToUnit: (unitId: string) => void;
 }
 
 type CycleFilter = 'A' | 'B' | 'All';
 
-export default function WorkoutPlayer({ calendar = [], units = [], onNavigateToUnit }: Props) {
-  const [cycle, setCycle] = useState<CycleFilter>('All');
+export default function WorkoutPlayer({ calendar = [], units = [], classId, onNavigateToUnit }: Props) {
+  // Intelligently default to 'A' or 'B' based on the class name
+  const [cycle, setCycle] = useState<CycleFilter>(
+    classId.includes('A') ? 'A' : classId.includes('B') ? 'B' : 'All'
+  );
+
+  // If the user switches classes in the top nav, update the filter instantly
+  useEffect(() => {
+    setCycle(classId.includes('A') ? 'A' : classId.includes('B') ? 'B' : 'All');
+  }, [classId]);
 
   const { activeData, archivedData } = useMemo(() => {
-    // 1. Filter out non-class days and apply the A/B/All toggle
     const validDays = calendar.filter(d => 
       (cycle === 'All' || d.ciclo === cycle) && 
       (d.status === 'school' || d.status === 'half-day')
     );
     
-    // 2. Determine "today" to calculate past vs future dynamically
     const d = new Date();
     const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const todayDateObj = new Date(todayStr + 'T00:00:00');
 
-    // 3. Process the data (locking, linking) and sort chronologically overall
     const processedDays = validDays.map(calEntry => {
       const isPast = calEntry.fecha < todayStr;
       
@@ -33,13 +39,11 @@ export default function WorkoutPlayer({ calendar = [], units = [], onNavigateToU
       const diffTime = eventDate.getTime() - todayDateObj.getTime();
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
       
-      // Lock content if it's more than 7 days in the future
       const isLocked = diffDays > 7;
 
       const unitName = calEntry.unitName || "No Unit Scheduled";
       const workoutName = calEntry.activity || calEntry.note || "Regular Class Routine";
 
-      // Check if the typed unitName matches an actual loaded unit to create a smart link
       const linkedUnit = units.find(u => u.unit.unit_name.toLowerCase() === unitName.toLowerCase());
 
       return {
@@ -50,9 +54,8 @@ export default function WorkoutPlayer({ calendar = [], units = [], onNavigateToU
         workoutName,
         linkedUnitId: linkedUnit?.id || null
       };
-    }).sort((a, b) => a.fecha.localeCompare(b.fecha)); // Chronological sort (oldest to newest)
+    }).sort((a, b) => a.fecha.localeCompare(b.fecha));
 
-    // 4. Split into Active and Archived
     const pastDays = processedDays.filter(d => d.fecha < todayStr);
     const futureDays = processedDays.filter(d => d.fecha >= todayStr);
 
@@ -60,13 +63,10 @@ export default function WorkoutPlayer({ calendar = [], units = [], onNavigateToU
     let archived = [];
 
     if (pastDays.length > 0) {
-      // The last item in the chronological past array is the most recent past class
       mostRecentPast = pastDays[pastDays.length - 1];
-      // Everything before it goes to the archive (keeping Day 1, Day 2 order)
       archived = pastDays.slice(0, pastDays.length - 1);
     }
 
-    // Active list: single most recent class on top, followed by today and future classes
     const active = mostRecentPast ? [mostRecentPast, ...futureDays] : [...futureDays];
 
     return { activeData: active, archivedData: archived };
@@ -81,7 +81,6 @@ export default function WorkoutPlayer({ calendar = [], units = [], onNavigateToU
     );
   }
 
-  // Helper function to render a table row so we don't duplicate the JSX code
   const renderRow = (row: typeof activeData[0], i: number) => (
     <tr key={i} className={`transition hover:bg-slate-50 ${row.isPast ? 'opacity-60 bg-slate-50/50' : ''}`}>
       <td className="p-4 font-bold text-blue-700 w-[20%] align-top">
@@ -148,7 +147,6 @@ export default function WorkoutPlayer({ calendar = [], units = [], onNavigateToU
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {/* Active Classes */}
             {activeData.map((row, i) => renderRow(row, i))}
             {activeData.length === 0 && (
               <tr>
@@ -161,7 +159,6 @@ export default function WorkoutPlayer({ calendar = [], units = [], onNavigateToU
         </table>
       </div>
 
-      {/* Archived Classes Details Toggle */}
       {archivedData.length > 0 && (
         <details className="group mt-8 border-t border-slate-200 pt-6">
           <summary className="flex cursor-pointer items-center justify-center gap-2 text-slate-500 font-bold uppercase tracking-wider text-xs hover:text-slate-800 transition-colors list-none bg-slate-50 py-3 rounded-lg border border-slate-200">

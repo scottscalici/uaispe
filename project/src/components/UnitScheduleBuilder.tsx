@@ -1,19 +1,19 @@
 import { useState, useMemo } from 'react';
-import { Plus, Trash2, BookOpen, CalendarPlus, Save } from 'lucide-react';
-import type { SyllabusData, ScheduleData, Match, CalendarDay } from '../types';
+import { Plus, Trash2, BookOpen, CalendarPlus, Save, Swords, Users, Trophy } from 'lucide-react';
+import type { SyllabusData, ScheduleData, Match, CalendarDay, MatchType, TeamSet } from '../types';
 
 interface Props {
   unitName: string;
   syllabus: SyllabusData;
   schedule: ScheduleData;
   teamNames: string[];
+  teamSets?: TeamSet[];
   onUpdateUnitName: (name: string) => void;
   onUpdateSyllabus: (s: SyllabusData) => void;
   onAddMatch: (m: Omit<Match, 'id'>) => void;
   onDeleteMatch: (id: number) => void;
 }
 
-// Temporary hardcoded calendar based on your Firestore A/B structure
 const myCalendar: CalendarDay[] = [
   { fecha: "2026-09-04", ciclo: null, dia: null, status: "no-school", note: "", manualOverride: false },
   { fecha: "2026-09-07", ciclo: null, dia: null, status: "no-school", note: "", manualOverride: false },
@@ -35,6 +35,7 @@ export default function UnitScheduleBuilder({
   syllabus,
   schedule,
   teamNames,
+  teamSets = [],
   onUpdateUnitName,
   onUpdateSyllabus,
   onAddMatch,
@@ -73,27 +74,16 @@ export default function UnitScheduleBuilder({
           onSave={onUpdateSyllabus} 
         />
       ) : (
-        <ScheduleEditor schedule={schedule} teamNames={teamNames} onAddMatch={onAddMatch} onDeleteMatch={onDeleteMatch} />
+        <ScheduleEditor schedule={schedule} teamNames={teamNames} teamSets={teamSets} onAddMatch={onAddMatch} onDeleteMatch={onDeleteMatch} />
       )}
     </div>
   );
 }
 
-function UnitPlanEditor({ 
-  unitName, 
-  onUpdateUnitName, 
-  syllabus, 
-  onSave 
-}: { 
-  unitName: string;
-  onUpdateUnitName: (n: string) => void;
-  syllabus: SyllabusData; 
-  onSave: (s: SyllabusData) => void 
-}) {
+function UnitPlanEditor({ unitName, onUpdateUnitName, syllabus, onSave }: any) {
   const [draft, setDraft] = useState<SyllabusData>(syllabus);
-
   const update = (patch: Partial<SyllabusData>) => setDraft((d) => ({ ...d, ...patch }));
-
+  
   const addRule = () => update({ rules: [...(draft.rules ?? []), ''] });
   const updateRule = (i: number, val: string) => {
     const rules = [...(draft.rules ?? [])];
@@ -125,24 +115,29 @@ function UnitPlanEditor({
     update({ unit_plan });
   };
   const removeDay = (i: number) => update({ unit_plan: (draft.unit_plan ?? []).filter((_, idx) => idx !== i) });
-
+  
   return (
     <div className="space-y-4">
       <div className="rounded-xl border-2 border-emerald-500 bg-emerald-50 p-4 shadow-sm">
         <h3 className="mb-2 text-sm font-bold uppercase text-emerald-800">Admin Tracking</h3>
-        <LabeledInput 
-          label="Unit Dropdown Name (Admin Only)" 
-          value={unitName} 
-          onChange={(v) => onUpdateUnitName(v)} 
-        />
+        <label className="block">
+          <span className="mb-1 block text-xs font-semibold uppercase text-emerald-700">Unit Dropdown Name (Admin Only)</span>
+          <input value={unitName} onChange={(e) => onUpdateUnitName(e.target.value)} className="w-full rounded-md border border-emerald-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none" />
+        </label>
         <p className="mt-1 text-xs text-emerald-600 font-medium">This instantly updates the top navigation dropdown.</p>
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h3 className="mb-3 text-sm font-bold uppercase text-slate-500">Student Syllabus Info</h3>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <LabeledInput label="Public Display Name" value={draft.display_name} onChange={(v) => update({ display_name: v })} />
-          <LabeledInput label="Header Image URL" value={draft.header_image ?? ''} onChange={(v) => update({ header_image: v })} />
+          <label className="block">
+            <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Public Display Name</span>
+            <input value={draft.display_name} onChange={(e) => update({ display_name: e.target.value })} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Header Image URL</span>
+            <input value={draft.header_image ?? ''} onChange={(e) => update({ header_image: e.target.value })} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+          </label>
         </div>
       </div>
 
@@ -154,7 +149,7 @@ function UnitPlanEditor({
           </button>
         </div>
         <div className="space-y-2">
-          {(draft.rules ?? []).map((r, i) => (
+          {(draft.rules ?? []).map((r: string, i: number) => (
             <div key={i} className="flex items-center gap-2">
               <input value={r} onChange={(e) => updateRule(i, e.target.value)} className="flex-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm" />
               <button onClick={() => removeRule(i)} className="text-red-400 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
@@ -171,7 +166,7 @@ function UnitPlanEditor({
           </button>
         </div>
         <div className="space-y-2">
-          {(draft.equipment ?? []).map((e, i) => (
+          {(draft.equipment ?? []).map((e: any, i: number) => (
             <div key={i} className="flex items-center gap-2">
               <input value={e.name} onChange={(ev) => updateEquip(i, ev.target.value)} placeholder="Item name" className="flex-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm" />
               <input value={e.caption ?? ''} onChange={(ev) => { const equipment = [...(draft.equipment ?? [])]; equipment[i] = { ...equipment[i], caption: ev.target.value }; update({ equipment }); }} placeholder="Caption" className="flex-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm" />
@@ -189,7 +184,7 @@ function UnitPlanEditor({
           </button>
         </div>
         <div className="space-y-2">
-          {(draft.key_terms ?? []).map((v, i) => (
+          {(draft.key_terms ?? []).map((v: any, i: number) => (
             <div key={i} className="flex items-center gap-2">
               <input value={v.term} onChange={(e) => updateVocab(i, 'term', e.target.value)} placeholder="Term" className="w-32 rounded-md border border-slate-300 px-3 py-1.5 text-sm" />
               <input value={v.definition} onChange={(e) => updateVocab(i, 'definition', e.target.value)} placeholder="Definition" className="flex-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm" />
@@ -207,16 +202,25 @@ function UnitPlanEditor({
           </button>
         </div>
         <div className="space-y-3">
-          {(draft.unit_plan ?? []).map((d, i) => (
+          {(draft.unit_plan ?? []).map((d: any, i: number) => (
             <div key={i} className="rounded-lg border border-slate-200 p-3">
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-500">Day {d.day}</span>
                 <button onClick={() => removeDay(i)} className="text-red-400 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
               </div>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                <LabeledInput label="Topic" value={d.topic ?? ''} onChange={(v) => updateDay(i, 'topic', v)} />
-                <LabeledInput label="Skills" value={d.skills ?? ''} onChange={(v) => updateDay(i, 'skills', v)} />
-                <LabeledInput label="Discussion" value={d.discussion ?? ''} onChange={(v) => updateDay(i, 'discussion', v)} />
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Topic</span>
+                  <input value={d.topic ?? ''} onChange={(e) => updateDay(i, 'topic', e.target.value)} className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm" />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Skills</span>
+                  <input value={d.skills ?? ''} onChange={(e) => updateDay(i, 'skills', e.target.value)} className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm" />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Discussion</span>
+                  <input value={d.discussion ?? ''} onChange={(e) => updateDay(i, 'discussion', e.target.value)} className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm" />
+                </label>
               </div>
             </div>
           ))}
@@ -226,15 +230,18 @@ function UnitPlanEditor({
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h3 className="mb-3 text-sm font-bold uppercase text-slate-500">Global Connections</h3>
         <div className="space-y-3">
-          <LabeledInput label="Description" value={draft.global_connections?.description ?? ''} onChange={(v) => update({ global_connections: { ...draft.global_connections, description: v } })} />
-          <LabeledInput label="Highlights Video URL" value={draft.global_connections?.highlights_video ?? ''} onChange={(v) => update({ global_connections: { ...draft.global_connections, highlights_video: v } })} />
+          <label className="block">
+            <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Description</span>
+            <input value={draft.global_connections?.description ?? ''} onChange={(e) => update({ global_connections: { ...draft.global_connections, description: e.target.value } })} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Highlights Video URL</span>
+            <input value={draft.global_connections?.highlights_video ?? ''} onChange={(e) => update({ global_connections: { ...draft.global_connections, highlights_video: e.target.value } })} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+          </label>
         </div>
       </div>
 
-      <button
-        onClick={() => onSave(draft)}
-        className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-700"
-      >
+      <button onClick={() => onSave(draft)} className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-700">
         <Save className="h-4 w-4" /> Save Student Syllabus
       </button>
     </div>
@@ -244,18 +251,35 @@ function UnitPlanEditor({
 function ScheduleEditor({
   schedule,
   teamNames,
+  teamSets,
   onAddMatch,
   onDeleteMatch,
 }: {
   schedule: ScheduleData;
   teamNames: string[];
+  teamSets: TeamSet[];
   onAddMatch: (m: Omit<Match, 'id'>) => void;
   onDeleteMatch: (id: number) => void;
 }) {
-  const [home, setHome] = useState(teamNames[0] ?? '');
-  const [away, setAway] = useState(teamNames[1] ?? '');
+  const [matchType, setMatchType] = useState<MatchType>('standard');
+  const [standardTeamSetId, setStandardTeamSetId] = useState<string>('base');
   
-  // Connected to Calendar and defaulted Time to 11:15
+  // Dynamically calculate available teams based on the selected roster source
+  const availableTeams = useMemo(() => {
+    if (standardTeamSetId === 'base') return teamNames;
+    const selectedSet = teamSets.find(ts => ts.id === standardTeamSetId);
+    return selectedSet ? selectedSet.teams.map(t => t.name) : [];
+  }, [standardTeamSetId, teamNames, teamSets]);
+
+  // When scheduling a bracket match, let them assign "TBD" so they can create the empty slots
+  const availableTeamsWithTBD = ['TBD', ...availableTeams];
+
+  const [home, setHome] = useState('');
+  const [away, setAway] = useState('');
+  const [teamSetId, setTeamSetId] = useState(teamSets[0]?.id ?? '');
+  
+  const [roundName, setRoundName] = useState('Quarterfinals'); // New bracket field
+
   const [date, setDate] = useState('');
   const [time, setTime] = useState('11:15');
   const [location, setLocation] = useState('Main Gym');
@@ -265,41 +289,149 @@ function ScheduleEditor({
   }, []);
 
   const handleAdd = () => {
-    if (!home || !away || !date) return;
-    onAddMatch({
-      home_team: home,
-      away_team: away,
-      home_score: null,
-      away_score: null,
-      date_str: date,
-      time,
-      location,
-      completed: false,
-    });
+    if (!date) return;
+    
+    if (matchType === 'standard') {
+      if (!home || !away) return;
+      onAddMatch({
+        match_type: 'standard',
+        team_set_id: standardTeamSetId, 
+        home_team: home,
+        away_team: away,
+        home_score: null,
+        away_score: null,
+        date_str: date,
+        time,
+        location,
+        completed: false,
+      });
+    } else if (matchType === 'minigame') {
+      if (!teamSetId) return;
+      const selectedSet = teamSets.find(ts => ts.id === teamSetId);
+      onAddMatch({
+        match_type: 'minigame',
+        team_set_id: teamSetId,
+        home_team: 'Mini-Games',
+        away_team: selectedSet ? selectedSet.name : 'Multiple Teams',
+        home_score: null,
+        away_score: null,
+        date_str: date,
+        time,
+        location,
+        completed: false,
+      });
+    } else if (matchType === 'bracket') {
+      if (!home || !away || !roundName) return;
+      onAddMatch({
+        match_type: 'bracket',
+        team_set_id: standardTeamSetId, 
+        home_team: home,
+        away_team: away,
+        home_score: null,
+        away_score: null,
+        date_str: date,
+        time,
+        location,
+        completed: false,
+        round_name: roundName,
+      });
+    }
     setDate('');
   };
+
+  const isFormValid = date && (matchType === 'minigame' ? teamSetId : (home && away));
 
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h3 className="mb-3 text-sm font-bold uppercase text-slate-500">Add Matchup</h3>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <label className="block">
-            <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Home Team</span>
-            <select value={home} onChange={(e) => setHome(e.target.value)} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm bg-white">
-              <option value="" disabled>Select Team...</option>
-              {teamNames.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Away Team</span>
-            <select value={away} onChange={(e) => setAway(e.target.value)} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm bg-white">
-              <option value="" disabled>Select Team...</option>
-              {teamNames.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </label>
+        <div className="mb-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <h3 className="text-sm font-bold uppercase text-slate-500">Add Schedule Event</h3>
           
-          {/* Dropdown connected directly to Calendar JSON */}
+          <div className="flex flex-wrap bg-slate-100 p-1 rounded-lg border border-slate-200">
+            <button 
+              onClick={() => setMatchType('standard')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${matchType === 'standard' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              <Swords className="w-3.5 h-3.5" /> Match
+            </button>
+            <button 
+              onClick={() => setMatchType('minigame')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${matchType === 'minigame' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              <Users className="w-3.5 h-3.5" /> Mini-Games
+            </button>
+            <button 
+              onClick={() => setMatchType('bracket')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${matchType === 'bracket' ? 'bg-amber-100 text-amber-800 shadow-sm border border-amber-200' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              <Trophy className="w-3.5 h-3.5" /> Bracket
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          
+          {matchType === 'standard' || matchType === 'bracket' ? (
+            <>
+              {teamSets.length > 0 && (
+                 <label className="block sm:col-span-2 lg:col-span-3 border-b border-slate-100 pb-3">
+                   <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Match Roster Source</span>
+                   <select 
+                     value={standardTeamSetId} 
+                     onChange={(e) => {
+                       setStandardTeamSetId(e.target.value);
+                       setHome('');
+                       setAway('');
+                     }} 
+                     className="w-full md:w-1/2 rounded-md border border-slate-300 px-3 py-2 text-sm font-bold text-blue-700 bg-white shadow-sm"
+                   >
+                     <option value="base">🏆 Default Unit Teams</option>
+                     {teamSets.map((ts) => <option key={ts.id} value={ts.id}>🔄 {ts.name}</option>)}
+                   </select>
+                 </label>
+              )}
+
+              {matchType === 'bracket' && (
+                <label className="block sm:col-span-2 lg:col-span-3">
+                  <span className="mb-1 block text-xs font-semibold uppercase text-amber-600">Tournament Round Name</span>
+                  <input 
+                    type="text" 
+                    value={roundName} 
+                    onChange={(e) => setRoundName(e.target.value)} 
+                    placeholder="e.g. Semifinals, Championship"
+                    className="w-full md:w-1/2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-900 focus:outline-none focus:ring-2 focus:ring-amber-500" 
+                  />
+                </label>
+              )}
+
+              <label className="block">
+                <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Home Team</span>
+                <select value={home} onChange={(e) => setHome(e.target.value)} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm bg-white">
+                  <option value="" disabled>Select Team...</option>
+                  {(matchType === 'bracket' ? availableTeamsWithTBD : availableTeams).map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Away Team</span>
+                <select value={away} onChange={(e) => setAway(e.target.value)} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm bg-white">
+                  <option value="" disabled>Select Team...</option>
+                  {(matchType === 'bracket' ? availableTeamsWithTBD : availableTeams).map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </label>
+            </>
+          ) : (
+            <label className="block sm:col-span-2">
+              <span className="mb-1 block text-xs font-semibold uppercase text-indigo-500">Select Daily Team Set</span>
+              <select value={teamSetId} onChange={(e) => setTeamSetId(e.target.value)} className="w-full rounded-md border border-indigo-300 px-3 py-2 text-sm bg-indigo-50 font-semibold text-indigo-900 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                <option value="" disabled>Choose a saved Team Set...</option>
+                {teamSets.map((ts) => <option key={ts.id} value={ts.id}>{ts.name} ({ts.teams.length} teams)</option>)}
+              </select>
+              {teamSets.length === 0 && (
+                <span className="text-xs text-amber-600 mt-1 block">You need to create and save a Team Set in the Generator tab first!</span>
+              )}
+            </label>
+          )}
+          
           <label className="block">
             <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Date</span>
             <select value={date} onChange={(e) => setDate(e.target.value)} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm bg-white">
@@ -312,7 +444,10 @@ function ScheduleEditor({
             </select>
           </label>
 
-          <LabeledInput label="Time" value={time} onChange={setTime} />
+          <label className="block">
+             <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Time</span>
+             <input value={time} onChange={(e) => setTime(e.target.value)} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
+          </label>
           
           <label className="block">
             <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Location</span>
@@ -330,8 +465,8 @@ function ScheduleEditor({
           </label>
 
           <div className="flex items-end">
-            <button onClick={handleAdd} disabled={!home || !away || !date} className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
-              <Plus className="h-4 w-4" /> Add Match
+            <button onClick={handleAdd} disabled={!isFormValid} className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
+              <Plus className="h-4 w-4" /> Add to Schedule
             </button>
           </div>
         </div>
@@ -343,19 +478,31 @@ function ScheduleEditor({
             <tr>
               <th className="px-4 py-2 text-left">Date</th>
               <th className="px-4 py-2 text-left">Time</th>
-              <th className="px-4 py-2 text-left">Home</th>
-              <th className="px-4 py-2 text-left">Away</th>
+              <th className="px-4 py-2 text-left">Event Details</th>
               <th className="px-4 py-2 text-left">Location</th>
               <th className="px-4 py-2 text-center">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {schedule.matches.map((m) => (
-              <tr key={m.id} className="hover:bg-slate-50">
+              <tr key={m.id} className={`hover:bg-slate-50 ${m.match_type === 'minigame' ? 'bg-indigo-50/30' : m.match_type === 'bracket' ? 'bg-amber-50/30' : ''}`}>
                 <td className="px-4 py-2.5">{m.date_str}</td>
                 <td className="px-4 py-2.5">{m.time}</td>
-                <td className="px-4 py-2.5 font-medium text-slate-800">{m.home_team}</td>
-                <td className="px-4 py-2.5 font-medium text-slate-800">{m.away_team}</td>
+                <td className="px-4 py-2.5 font-medium text-slate-800">
+                  {m.match_type === 'minigame' ? (
+                    <div className="flex items-center gap-1.5 text-indigo-700">
+                      <Users className="w-4 h-4" />
+                      <span>Mini-Games / Relays <span className="text-slate-500 font-normal">({m.away_team})</span></span>
+                    </div>
+                  ) : m.match_type === 'bracket' ? (
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold text-amber-600 uppercase tracking-wider">{m.round_name}</span>
+                      <span>{m.home_team} <span className="text-slate-400 text-xs mx-1">vs</span> {m.away_team}</span>
+                    </div>
+                  ) : (
+                    <span>{m.home_team} <span className="text-slate-400 text-xs mx-1">vs</span> {m.away_team}</span>
+                  )}
+                </td>
                 <td className="px-4 py-2.5 text-slate-500">{m.location}</td>
                 <td className="px-4 py-2.5 text-center">
                   <button onClick={() => onDeleteMatch(m.id)} className="text-red-400 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
@@ -373,14 +520,5 @@ function ScheduleEditor({
         </table>
       </div>
     </div>
-  );
-}
-
-function LabeledInput({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">{label}</span>
-      <input value={value} onChange={(e) => onChange(e.target.value)} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
-    </label>
   );
 }

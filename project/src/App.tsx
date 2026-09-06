@@ -149,8 +149,26 @@ export default function App() {
   const handleUpdatePlayer = (id: string, updates: Partial<Player>) => updateClass((c) => ({ ...c, roster: c.roster.map(p => p.id === id ? { ...p, ...updates } : p), units: c.units.map(u => ({ ...u, unit: { ...u.unit, baseTeams: u.unit.baseTeams.map(t => ({ ...t, players: t.players.map(p => p.id === id ? { ...p, ...updates } : p) })) } })) }));
   const handleDeletePlayer = (id: string) => updateClass((c) => ({ ...c, roster: c.roster.filter(p => p.id !== id), units: c.units.map(u => ({ ...u, unit: { ...u.unit, baseTeams: u.unit.baseTeams.map(t => ({ ...t, players: t.players.filter(p => p.id !== id) })) } })) }));
 
-  const handleGenerateTeams = (teams: Team[]) => updateActiveUnit((u) => ({ ...u, unit: { ...u.unit, baseTeams: teams } }));
-  const handleRenameTeam = (teamId: number, newName: string) => updateActiveUnit((u) => ({ ...u, unit: { ...u.unit, baseTeams: u.unit.baseTeams.map((t) => t.id === teamId ? { ...t, name: newName } : t) } }));
+  const handleGenerateTeams = (teams: Team[], teamSetName?: string) => updateActiveUnit((u) => {
+    // If a set name is provided, save it as a dynamic Team Set
+    if (teamSetName) {
+      const newSet = { id: `ts_${Date.now()}`, name: teamSetName, teams };
+      return { ...u, unit: { ...u.unit, teamSets: [...(u.unit.teamSets || []), newSet] } };
+    }
+    // Otherwise, overwrite the traditional default baseTeams
+    return { ...u, unit: { ...u.unit, baseTeams: teams } };
+  });
+
+  // 👇 PASTE THIS NEW FUNCTION RIGHT HERE 👇
+  const handleDeleteTeamSet = (teamSetId: string) => updateActiveUnit((u) => ({
+    ...u,
+    unit: {
+      ...u.unit,
+      teamSets: u.unit.teamSets?.filter(ts => ts.id !== teamSetId)
+    }
+  }));
+  // 👆 --------------------------------- 👆
+    const handleRenameTeam = (teamId: number, newName: string) => updateActiveUnit((u) => ({ ...u, unit: { ...u.unit, baseTeams: u.unit.baseTeams.map((t) => t.id === teamId ? { ...t, name: newName } : t) } }));
   const handleSwap = (p1Id: string, t1Id: number, p2Id: string, t2Id: number) => updateActiveUnit((u) => {
     const teams = u.unit.baseTeams.map((t) => ({ ...t, players: [...t.players] }));
     const t1 = teams.find((t) => t.id === t1Id); const t2 = teams.find((t) => t.id === t2Id);
@@ -194,7 +212,48 @@ export default function App() {
   
   const handleAddMatch = (m: Omit<Match, 'id'>) => updateActiveUnit((u) => ({ ...u, schedule: { ...u.schedule, matches: [...u.schedule.matches, { ...m, id: genMatchId() }] } }));
   const handleDeleteMatch = (id: number) => updateActiveUnit((u) => ({ ...u, schedule: { ...u.schedule, matches: u.schedule.matches.filter((m) => m.id !== id) } }));
+// NEW: Trickles down a win to every student on a specific team during a Mini-Game
+const handleAwardTeamWin = (teamId: number, teamSetId: string) => updateClass((c) => {
+  const activeUnit = c.units.find(u => u.id === (c.activeUnitId || c.units[0]?.id));
+  if (!activeUnit) return c;
+  const teamSet = activeUnit.unit.teamSets?.find(ts => ts.id === teamSetId);
+  if (!teamSet) return c;
+  const team = teamSet.teams.find(t => t.id === teamId);
+  if (!team) return c;
+  // Find all player IDs on this specific winning team
+  const playerIds = team.players.map(p => p.id);
+  
+  // 1. Update master roster with new wins
+  const nextRoster = c.roster.map(p => 
+    playerIds.includes(p.id) ? { ...p, lifetimeWins: (p.lifetimeWins || 0) + 1 } : p
+  );
+  
+  // 2. Sync those new win totals across all unit team data structures
+  const nextUnits = c.units.map(u => ({
+    ...u,
+    unit: {
+      ...u.unit,
+      baseTeams: u.unit.baseTeams.map(t => ({
+        ...t, players: t.players.map(p => playerIds.includes(p.id) ? { ...p, lifetimeWins: (p.lifetimeWins || 0) + 1 } : p)
+      })),
+      teamSets: u.unit.teamSets?.map(ts => ({
+        ...ts, teams: ts.teams.map(t => ({
+          ...t, players: t.players.map(p => playerIds.includes(p.id) ? { ...p, lifetimeWins: (p.lifetimeWins || 0) + 1 } : p)
+        }))
+      }))
+    }
+  }));
+  return { ...c, roster: nextRoster, units: nextUnits };
+});
 
+// NEW: Allows admins to mark a Mini-Game as completed
+const handleToggleMatchComplete = (matchId: number) => updateActiveUnit((u) => ({
+  ...u,
+  schedule: {
+    ...u.schedule,
+    matches: u.schedule.matches.map(m => m.id === matchId ? { ...m, completed: !m.completed } : m)
+  }
+}));
   const handleUpdateLog = (playerId: string, log: DailyLog) => updateClass((c) => ({ ...c, logs: { ...c.logs, [playerId]: log } }));
   const handleQuickSet = (playerId: string, type: ScoreType) => updateClass((c) => ({ ...c, logs: { ...c.logs, [playerId]: emptyLog(type) } }));
   const handleMarkAll = (type: ScoreType) => updateClass((c) => { const next: DailyLogMap = {}; allPlayerIds(c).forEach((id) => { next[id] = emptyLog(type); }); return { ...c, logs: next }; });
@@ -354,13 +413,13 @@ export default function App() {
           {route === 'admin' ? (
             <>
               {adminView === 'teams' ? <TeamManager key={`teams-${unit.unit_id}`} unit={unit} isAdmin={true} onSwap={handleSwap} onMove={handleMovePlayer} attendance={attendance} onRenameTeam={handleRenameTeam} />
-              : adminView === 'schedule' ? <ScheduleStandings key={`sched-${unit.unit_id}`} schedule={schedule} isAdmin={true} onUpdateScore={handleUpdateScore} />
+              : adminView === 'schedule' ? <ScheduleStandings key={`sched-${unit.unit_id}`} unit={unit} schedule={schedule} isAdmin={true} onUpdateScore={handleUpdateScore} onAwardTeamWin={handleAwardTeamWin} onToggleMatchComplete={handleToggleMatchComplete} />
               : adminView === 'attendance' ? <AttendanceTracker key={`att-${unit.unit_id}`} roster={roster} unit={unit} logs={logs} quarterHistory={quarterHistory} floorGrid={floorGrid} onUpdateLog={handleUpdateLog} onQuickSet={handleQuickSet} onMarkAll={handleMarkAll} onUpdatePlayer={handleUpdatePlayer} onUpdateFloorGrid={(g) => updateClass((c) => ({ ...c, floorGrid: g }))} />
               : adminView === 'grades' ? <DailyGrades key={`grades-${unit.unit_id}`} roster={roster} unit={unit} logs={logs} quarterHistory={quarterHistory} />
               : adminView === 'roster' ? <RosterManager key={`roster-${activeClassId}`} roster={roster} unit={unit} floorGrid={floorGrid} classId={activeClassId} onAddPlayer={handleAddPlayer} onBulkAddPlayers={handleBulkAddPlayers} onUpdatePlayer={handleUpdatePlayer} onDeletePlayer={handleDeletePlayer} onUpdateFloorGrid={(g) => updateClass((c) => ({ ...c, floorGrid: g }))} />
-              : adminView === 'teamcreator' ? <TeamCreator key={`tc-${unit.unit_id}`} roster={roster} unit={unit} onGenerate={handleGenerateTeams} onMovePlayer={handleMovePlayer} />
+              : adminView === 'teamcreator' ? <TeamCreator key={`tc-${unit.unit_id}`} roster={roster} unit={unit} onGenerate={handleGenerateTeams} onMovePlayer={handleMovePlayer} onDeleteTeamSet={handleDeleteTeamSet} />
               : adminView === 'calendar' ? <MasterCalendarBuilder key={`cal-${activeClassId}`} calendar={activeClass.masterCalendar || []} classId={activeClassId} onSave={(cal) => updateClass(c => ({ ...c, masterCalendar: cal }))} />
-                            : <UnitScheduleBuilder key={`builder-${unit.unit_id}`} unitName={unit.unit_name} onUpdateUnitName={handleUpdateUnitName} syllabus={syllabus} schedule={schedule} teamNames={teamNames} onUpdateSyllabus={handleUpdateSyllabus} onAddMatch={handleAddMatch} onDeleteMatch={handleDeleteMatch} />}
+              : <UnitScheduleBuilder key={`builder-${unit.unit_id}`} unitName={unit.unit_name} onUpdateUnitName={handleUpdateUnitName} syllabus={syllabus} schedule={schedule} teamNames={teamNames} teamSets={unit.teamSets} onUpdateSyllabus={handleUpdateSyllabus} onAddMatch={handleAddMatch} onDeleteMatch={handleDeleteMatch} />}
 
               {/* DANGER ZONE - Only visible inside the Builder tab */}
               {adminView === 'builder' && (
@@ -380,6 +439,7 @@ export default function App() {
                 key={`workout-${activeClassId}`} 
                 calendar={activeClass.masterCalendar || []} 
                 units={activeClass.units || []} 
+                classId={activeClassId}
                 onNavigateToUnit={(unitId) => {
                   updateClass(c => ({ ...c, activeUnitId: unitId }));
                   setPublicView('dashboard');

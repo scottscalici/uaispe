@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { UserPlus, Pencil, Trash2, X, Grid3x3, Check, Upload } from 'lucide-react';
+import { UserPlus, Pencil, Trash2, X, Grid3x3, Check, Upload, Plus, Minus } from 'lucide-react';
 import type { Unit, Player, Gender, Availability, FloorGrid } from '../types';
 import BulkImportModal from './BulkImportModal';
 
@@ -137,6 +137,8 @@ export default function RosterManager({
                   <tr>
                     <th className="px-4 py-3 text-left">Name</th>
                     <th className="px-4 py-3 text-left">Team</th>
+                    <th className="px-4 py-3 text-center">Wins</th>
+                    <th className="px-4 py-3 text-center">Votes</th>
                     <th className="px-4 py-3 text-center">Grade</th>
                     <th className="px-4 py-3 text-center">Skill (1-10)</th>
                     <th className="px-4 py-3 text-center">Compete (1-5)</th>
@@ -150,6 +152,49 @@ export default function RosterManager({
                     <tr key={player.id} className="hover:bg-slate-50">
                       <td className="px-4 py-2.5 font-medium text-slate-800 whitespace-nowrap">{player.name}</td>
                       <td className="px-4 py-2.5 text-slate-500 whitespace-nowrap">{teamName}</td>
+                      
+                      {/* Lifetime Wins Controls */}
+                      <td className="px-4 py-2.5 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <button 
+                            onClick={() => onUpdatePlayer(player.id, { lifetimeWins: Math.max(0, (player.lifetimeWins || 0) - 1) })}
+                            className="rounded bg-amber-50 p-0.5 text-amber-400 hover:bg-amber-200 hover:text-amber-700 transition"
+                            title="Remove 1 Win"
+                          >
+                            <Minus className="h-3 w-3" />
+                          </button>
+                          <span className="font-bold text-amber-600 w-5 text-center">{player.lifetimeWins || 0}</span>
+                          <button 
+                            onClick={() => onUpdatePlayer(player.id, { lifetimeWins: (player.lifetimeWins || 0) + 1 })}
+                            className="rounded bg-amber-100 p-0.5 text-amber-600 hover:bg-amber-200 transition"
+                            title="Add 1 Win"
+                          >
+                            <Plus className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </td>
+
+                      {/* Teammate Votes Controls */}
+                      <td className="px-4 py-2.5 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <button 
+                            onClick={() => onUpdatePlayer(player.id, { teammateVotes: Math.max(0, (player.teammateVotes || 0) - 1) })}
+                            className="rounded bg-rose-50 p-0.5 text-rose-400 hover:bg-rose-200 hover:text-rose-700 transition"
+                            title="Remove 1 Vote"
+                          >
+                            <Minus className="h-3 w-3" />
+                          </button>
+                          <span className="font-bold text-rose-600 w-5 text-center">{player.teammateVotes || 0}</span>
+                          <button 
+                            onClick={() => onUpdatePlayer(player.id, { teammateVotes: (player.teammateVotes || 0) + 1 })}
+                            className="rounded bg-rose-100 p-0.5 text-rose-600 hover:bg-rose-200 transition"
+                            title="Add 1 Vote"
+                          >
+                            <Plus className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </td>
+
                       <td className="px-4 py-2.5 text-center font-bold text-slate-600">{player.grade || '-'}</td>
                       <td className="px-4 py-2.5 text-center">{player.skill}</td>
                       <td className="px-4 py-2.5 text-center">{player.compete}</td>
@@ -301,6 +346,8 @@ function EditPlayerModal({
   const [compete, setCompete] = useState(player?.compete ?? 3);
   const [gender, setGender] = useState<Gender>(player?.gender ?? 'M');
   const [availability, setAvailability] = useState<Availability>(player?.availability ?? 'active');
+  const [lifetimeWins, setLifetimeWins] = useState(player?.lifetimeWins ?? 0);
+  const [teammateVotes, setTeammateVotes] = useState(player?.teammateVotes ?? 0);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
@@ -337,6 +384,7 @@ function EditPlayerModal({
               <input type="range" min={1} max={5} value={compete} onChange={(e) => setCompete(parseInt(e.target.value))} className="w-full" />
             </Field>
           </div>
+          
           <div className="grid grid-cols-2 gap-3">
             <Field label="Gender">
               <select value={gender} onChange={(e) => setGender(e.target.value as Gender)} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
@@ -352,13 +400,35 @@ function EditPlayerModal({
               </select>
             </Field>
           </div>
+
+          <div className="grid grid-cols-2 gap-3 border-t border-slate-100 pt-3 mt-3">
+            <Field label="Lifetime Wins">
+              <input
+                type="number"
+                min={0}
+                value={lifetimeWins}
+                onChange={(e) => setLifetimeWins(parseInt(e.target.value) || 0)}
+                className="w-full rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-900 focus:border-amber-500 focus:outline-none"
+              />
+            </Field>
+            <Field label="Teammate Votes">
+              <input
+                type="number"
+                min={0}
+                value={teammateVotes}
+                onChange={(e) => setTeammateVotes(parseInt(e.target.value) || 0)}
+                className="w-full rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-900 focus:border-rose-500 focus:outline-none"
+              />
+            </Field>
+          </div>
+
         </div>
         <div className="mt-5 flex gap-2">
           <button onClick={onClose} className="flex-1 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100">
             Cancel
           </button>
           <button
-            onClick={() => onSave({ name, grade, skill, compete, gender, availability })}
+            onClick={() => onSave({ name, grade, skill, compete, gender, availability, lifetimeWins, teammateVotes })}
             disabled={!name.trim()}
             className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
           >

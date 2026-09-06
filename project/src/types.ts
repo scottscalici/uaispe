@@ -8,9 +8,11 @@ export interface Player {
   gender: string;
   skill: number;
   compete: number;
-  grade?: string; // <--- NEW FIELD ADDED HERE
+  grade?: string;
   availability?: 'active' | 'injured' | 'out';
   scheduledAbsences?: { id: string; date: string; reason: string }[];
+  lifetimeWins?: number;
+  teammateVotes?: number;
 }
 
 export interface CalendarDay {
@@ -24,18 +26,18 @@ export interface CalendarDay {
   activity?: string;
 }
 
-export interface ClassData {
-  id: string;
-  // ... keep existing properties
-  masterCalendar?: CalendarDay[]; 
-}
-
 export interface Team {
   id: number;
   name: string;
   league: League;
   players: Player[];
   logo_id?: string;
+}
+
+export interface TeamSet {
+  id: string;
+  name: string; 
+  teams: Team[];
 }
 
 export interface Unit {
@@ -45,18 +47,25 @@ export interface Unit {
   class_id: string;
   has_leagues: boolean;
   baseTeams: Team[];
+  teamSets?: TeamSet[]; 
 }
+
+// --- UPGRADED: Added 'bracket' ---
+export type MatchType = 'standard' | 'minigame' | 'bracket';
 
 export interface Match {
   id: number;
-  home_team: string;
-  away_team: string;
+  match_type?: MatchType; 
+  team_set_id?: string; 
+  home_team: string; 
+  away_team: string; 
   home_score: number | null;
   away_score: number | null;
   date_str: string;
   time: string;
   location: string;
   completed: boolean;
+  round_name?: string; // NEW: E.g., "Quarterfinals", "Championship"
 }
 
 export interface StandingRow {
@@ -96,18 +105,19 @@ export interface Activity {
   image?: MediaImage;
 }
 
+export interface KeyTerm {
+  term: string;
+  definition: string;
+  image?: MediaImage;
+}
+
 export interface DayPlan {
   day: number;
   topic?: string;
   skills?: string;
   discussion?: string;
   activities?: Activity[];
-}
-
-export interface KeyTerm {
-  term: string;
-  definition: string;
-  image?: MediaImage;
+  key_terms?: KeyTerm[]; 
 }
 
 export interface GlobalConnections {
@@ -123,7 +133,7 @@ export interface SyllabusData {
   equipment?: EquipmentItem[];
   rules?: string[];
   unit_plan?: DayPlan[];
-  key_terms?: KeyTerm[];
+  key_terms?: KeyTerm[]; 
   global_connections?: GlobalConnections;
 }
 
@@ -167,7 +177,6 @@ export interface QuarterHistory {
 
 export type QuarterHistoryMap = Record<string, QuarterHistory>;
 
-// --- Floor spot grid ---
 export interface FloorSpot {
   row: number;
   col: number;
@@ -177,11 +186,9 @@ export interface FloorSpot {
 
 export type FloorGrid = Record<string, FloorSpot>;
 
-// --- Win tracking & teammate points ---
 export type WinMap = Record<string, number>;
 export type TeammatePointMap = Record<string, number>;
 
-// --- NEW UNIT WRAPPER ---
 export interface UnitData {
   id: string;
   unit: Unit;
@@ -191,7 +198,6 @@ export interface UnitData {
   teammatePoints: TeammatePointMap;
 }
 
-// --- Multi-class support ---
 export interface ClassData {
   id: string;
   roster: Player[];
@@ -200,4 +206,5 @@ export interface ClassData {
   floorGrid: FloorGrid;
   units: UnitData[];
   activeUnitId: string;
+  masterCalendar?: CalendarDay[];
 }

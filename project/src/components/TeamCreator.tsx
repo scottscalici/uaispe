@@ -1,12 +1,13 @@
-import { useMemo, useState, useEffect } from 'react';
-import { Wand2, Save, ArrowRightLeft } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Wand2, Save, ArrowRightLeft, Users, Plus, Trash2, Pencil } from 'lucide-react';
 import type { Unit, Player, Team } from '../types';
 
 interface Props {
   roster: Player[];
   unit: Unit;
-  onGenerate: (teams: Team[]) => void;
+  onGenerate: (teams: Team[], teamSetName?: string) => void;
   onMovePlayer: (playerId: string, fromTeamId: number, toTeamId: number) => void;
+  onDeleteTeamSet: (teamSetId: string) => void; 
 }
 
 // Helper: Randomize an array
@@ -69,7 +70,7 @@ function balanceGroup(teams: Team[]): void {
   }
 }
 
-export default function TeamCreator({ roster, onGenerate }: Props) {
+export default function TeamCreator({ roster, unit, onGenerate, onDeleteTeamSet }: Props) {
   const [mode, setMode] = useState<'standard' | 'comprec' | 'gendered' | 'grade'>('standard');
   
   // Settings State
@@ -83,12 +84,16 @@ export default function TeamCreator({ roster, onGenerate }: Props) {
   
   const [preview, setPreview] = useState<Team[] | null>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<{ id: string; teamId: number } | null>(null);
+  const [newSetName, setNewSetName] = useState('');
+
+  // Dynamically calculate the GitHub URL for the active unit
+  const safeUnit = unit.unit_name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  const githubRepoUrl = `https://github.com/scottscalici/PE/tree/main/teams/${safeUnit}`;
 
   const activePlayers = useMemo(() => {
     return roster.filter((p) => !p.availability || p.availability === 'active');
   }, [roster]);
 
-  // Extract unique grades safely from the roster
   const uniqueGrades = useMemo(() => {
     const grades = Array.from(new Set(activePlayers.map(p => p.grade?.trim() || 'Unspecified')));
     return grades.sort();
@@ -175,16 +180,13 @@ export default function TeamCreator({ roster, onGenerate }: Props) {
       setSelectedPlayer({ id: playerId, teamId });
       return;
     }
-
     if (selectedPlayer.id === playerId) {
       setSelectedPlayer(null);
       return;
     }
-
     setPreview((prev) => {
       if (!prev) return null;
       const nextPreview = prev.map(t => ({ ...t, players: [...t.players] }));
-      
       const team1 = nextPreview.find(t => t.id === selectedPlayer.teamId);
       const team2 = nextPreview.find(t => t.id === teamId);
       
@@ -200,7 +202,6 @@ export default function TeamCreator({ roster, onGenerate }: Props) {
       }
       return nextPreview;
     });
-    
     setSelectedPlayer(null);
   };
 
@@ -208,7 +209,6 @@ export default function TeamCreator({ roster, onGenerate }: Props) {
     setPreview((prev) => {
       if (!prev) return null;
       const nextPreview = prev.map(t => ({ ...t, players: [...t.players] }));
-      
       const sourceTeam = nextPreview.find(t => t.id === fromTeamId);
       const destTeam = nextPreview.find(t => t.id === toTeamId);
       
@@ -219,13 +219,17 @@ export default function TeamCreator({ roster, onGenerate }: Props) {
         const [movedPlayer] = sourceTeam.players.splice(pIdx, 1);
         destTeam.players.push(movedPlayer);
       }
-      
       return nextPreview;
     });
     setSelectedPlayer(null); 
   };
 
-  const handleApply = () => {
+  // Helper to rename individual generated teams in the preview
+  const handleRenamePreviewTeam = (teamId: number, newName: string) => {
+    setPreview((prev) => prev ? prev.map(t => t.id === teamId ? { ...t, name: newName } : t) : null);
+  };
+
+  const handleSaveDefault = () => {
     if (preview) {
       onGenerate(preview);
       setPreview(null);
@@ -233,19 +237,79 @@ export default function TeamCreator({ roster, onGenerate }: Props) {
     }
   };
 
+  const handleSaveTeamSet = () => {
+    if (preview && newSetName.trim()) {
+      onGenerate(preview, newSetName.trim());
+      setPreview(null);
+      setSelectedPlayer(null);
+      setNewSetName('');
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="mb-6 flex items-center justify-between border-b border-slate-100 pb-4">
-          <h2 className="flex items-center gap-2 text-xl font-bold text-slate-800">
-            <Wand2 className="h-6 w-6 text-blue-600" /> Auto-Generate Teams
-          </h2>
-          <div className="text-sm font-semibold text-slate-500">
-            {activePlayers.length} Active Players in Pool
+      {/* Display Existing Team Sets */}
+      {unit.teamSets && unit.teamSets.length > 0 && (
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-5 shadow-sm">
+          <h3 className="mb-3 flex items-center gap-2 font-bold text-indigo-900">
+            <Users className="h-5 w-5" /> Saved Team Sets for {unit.unit_name}
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {unit.teamSets.map(ts => (
+              <div key={ts.id} className="group flex items-center gap-2 rounded-lg border border-indigo-200 bg-white px-3 py-1.5 shadow-sm transition-all hover:border-indigo-300">
+                <span className="font-bold text-indigo-700">{ts.name}</span>
+                <span className="text-xs font-semibold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+                  {ts.teams.length} teams
+                </span>
+                
+                <div className="ml-1 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                  <button 
+                    onClick={() => {
+                      setPreview(ts.teams);
+                      setNewSetName(ts.name);
+                      onDeleteTeamSet(ts.id); 
+                    }}
+                    className="rounded p-1 text-indigo-400 hover:bg-indigo-50 hover:text-indigo-700"
+                    title="Edit (Loads into preview)"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                  <button 
+                    onClick={() => onDeleteTeamSet(ts.id)}
+                    className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-500"
+                    title="Delete Team Set"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
+      )}
 
-        {/* Generation Mode Selector */}
+      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="mb-6 flex flex-wrap items-center justify-between border-b border-slate-100 pb-4 gap-4">
+          <div>
+            <h2 className="flex items-center gap-2 text-xl font-bold text-slate-800">
+              <Wand2 className="h-6 w-6 text-blue-600" /> Auto-Generate Teams
+            </h2>
+            <div className="text-sm font-semibold text-slate-500 mt-1">
+              {activePlayers.length} Active Players in Pool
+            </div>
+          </div>
+          
+          {/* THE NEW GITHUB SHORTCUT BUTTON */}
+          <a 
+            href={githubRepoUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-200 hover:text-slate-900 transition border border-slate-200 shadow-sm"
+          >
+            <Users className="h-4 w-4" /> View Logo Folder (GitHub)
+          </a>
+        </div>
+
         <div className="mb-6 flex flex-wrap gap-2">
           {(['standard', 'comprec', 'gendered', 'grade'] as const).map(m => (
             <button
@@ -260,7 +324,6 @@ export default function TeamCreator({ roster, onGenerate }: Props) {
           ))}
         </div>
 
-        {/* Dynamic Settings */}
         <div className="mb-6 rounded-lg bg-slate-50 p-4 border border-slate-200">
           {mode === 'standard' && (
             <div className="flex items-center gap-4">
@@ -327,24 +390,55 @@ export default function TeamCreator({ roster, onGenerate }: Props) {
 
       {preview && (
         <div className="animate-in fade-in slide-in-from-bottom-4 rounded-xl border-2 border-blue-500 bg-white p-6 shadow-xl">
-          <div className="mb-6 flex items-center justify-between border-b border-slate-100 pb-4">
+          <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between border-b border-slate-100 pb-4 gap-4">
             <div>
               <h3 className="text-xl font-black text-slate-800">Team Preview</h3>
               <p className="text-sm text-slate-500 flex items-center gap-1 mt-1">
-                <ArrowRightLeft className="w-3 h-3"/> Click any two players to swap, or use the dropdown to move.
+                <ArrowRightLeft className="w-3 h-3"/> Click any two players to swap, or use dropdown to move.
               </p>
             </div>
-            <button onClick={handleApply} className="flex items-center gap-2 rounded-lg bg-blue-600 px-6 py-2.5 font-bold text-white transition hover:bg-blue-700 shadow-lg shadow-blue-200">
-              <Save className="h-4 w-4" /> Apply Teams to Roster
-            </button>
+            
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button 
+                onClick={handleSaveDefault} 
+                className="flex items-center justify-center gap-2 rounded-lg bg-slate-800 px-4 py-2 text-sm font-bold text-white transition hover:bg-slate-900 shadow-sm"
+              >
+                <Save className="h-4 w-4" /> Set as Default
+              </button>
+              
+              <div className="flex items-center gap-2 rounded-lg bg-indigo-50 p-1 border border-indigo-200">
+                <input 
+                  type="text" 
+                  value={newSetName}
+                  onChange={(e) => setNewSetName(e.target.value)}
+                  placeholder="e.g. Day 1 Relays"
+                  className="w-40 rounded-md border border-indigo-200 px-3 py-1.5 text-sm font-semibold outline-none focus:border-indigo-400"
+                />
+                <button 
+                  onClick={handleSaveTeamSet}
+                  disabled={!newSetName.trim()}
+                  className="flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-bold text-white hover:bg-indigo-700 disabled:opacity-50 transition"
+                >
+                  <Plus className="h-4 w-4" /> Save as Set
+                </button>
+              </div>
+            </div>
           </div>
 
           <div className="grid gap-6 md:grid-cols-2">
             {preview.map(team => (
               <div key={team.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4 transition-all">
                 <div className="mb-4 flex items-center justify-between border-b border-slate-200 pb-3">
-                  <div className="font-black text-slate-800">
-                    {team.name} <span className="text-sm font-normal text-slate-500">({team.players.length} players)</span>
+                  {/* Inline Team Name Editing */}
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={team.name}
+                      onChange={(e) => handleRenamePreviewTeam(team.id, e.target.value)}
+                      className="font-black text-slate-800 bg-transparent border-b border-dashed border-slate-300 focus:border-blue-500 outline-none px-1 py-0.5 max-w-[150px] transition-colors"
+                      placeholder="Team Name"
+                    />
+                    <span className="text-sm font-normal text-slate-500">({team.players.length} players)</span>
                   </div>
                   <div className="text-xs font-bold text-slate-500 bg-white px-2 py-1 rounded border shadow-sm">
                     Avg Skill: {avgSkill(team.players).toFixed(1)}
@@ -366,7 +460,6 @@ export default function TeamCreator({ roster, onGenerate }: Props) {
                         <span className={`font-semibold truncate mr-2 ${isSelected ? 'text-blue-800' : 'text-slate-700'}`}>
                           {p.name}
                         </span>
-                        
                         <div className="flex items-center gap-3 shrink-0">
                           <div className="flex gap-2 text-[10px] sm:text-xs font-bold text-slate-400">
                             {p.grade && <span className="text-purple-500 hidden sm:inline">{p.grade}</span>}
@@ -374,7 +467,6 @@ export default function TeamCreator({ roster, onGenerate }: Props) {
                             <span>S:{p.skill}</span>
                             <span className="hidden sm:inline">C:{p.compete}</span>
                           </div>
-                          
                           <select
                             value=""
                             onChange={(e) => handleMoveInPreview(p.id, team.id, Number(e.target.value))}
