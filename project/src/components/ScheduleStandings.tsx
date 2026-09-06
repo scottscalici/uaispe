@@ -13,9 +13,16 @@ interface Props {
 }
 
 export default function ScheduleStandings({ unit, schedule, isAdmin, onUpdateScore, onAwardTeamWin, onToggleMatchComplete }: Props) {
-  // ONLY calculate standings for standard matches
-  const standardMatches = useMemo(() => schedule.matches.filter(m => m.match_type === 'standard' || !m.match_type), [schedule.matches]);
-  const bracketMatches = useMemo(() => schedule.matches.filter(m => m.match_type === 'bracket'), [schedule.matches]);
+  // NEW: Guarantee all matches are sorted perfectly by Date and Time
+  const sortedAllMatches = useMemo(() => {
+    return [...schedule.matches].sort((a, b) => {
+      if (a.date_str !== b.date_str) return a.date_str.localeCompare(b.date_str);
+      return (a.time || '').localeCompare(b.time || '');
+    });
+  }, [schedule.matches]);
+
+  const standardMatches = useMemo(() => sortedAllMatches.filter(m => m.match_type === 'standard' || !m.match_type), [sortedAllMatches]);
+  const bracketMatches = useMemo(() => sortedAllMatches.filter(m => m.match_type === 'bracket'), [sortedAllMatches]);
   
   const standings = useMemo(() => computeStandings(standardMatches), [standardMatches]);
   const ranked = useMemo(() => rankStandings(standings), [standings]);
@@ -24,20 +31,20 @@ export default function ScheduleStandings({ unit, schedule, isAdmin, onUpdateSco
     const d = new Date();
     const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-    const allDates = Array.from(new Set(schedule.matches.map(m => m.date_str))).sort();
+    const allDates = Array.from(new Set(sortedAllMatches.map(m => m.date_str)));
     const pastDates = allDates.filter(date => date < todayStr);
     const mostRecentPastDate = pastDates.length > 0 ? pastDates[pastDates.length - 1] : null;
 
     const active: Match[] = [];
     const archived: Match[] = [];
 
-    schedule.matches.forEach(m => {
+    sortedAllMatches.forEach(m => {
       if (m.date_str >= todayStr || m.date_str === mostRecentPastDate) active.push(m);
       else archived.push(m);
     });
 
     return { activeMatches: active, archivedMatches: archived };
-  }, [schedule.matches]);
+  }, [sortedAllMatches]);
 
   const getLogoUrl = (teamName: string) => {
     if (!teamName || teamName === 'TBD') return '';

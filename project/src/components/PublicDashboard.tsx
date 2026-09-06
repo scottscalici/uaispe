@@ -11,6 +11,14 @@ export default function PublicDashboard({ unit, schedule }: Props) {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeRosterId, setActiveRosterId] = useState<string>('base');
 
+  // Ensure all schedule arrays are perfectly sorted chronologically
+  const sortedAllMatches = useMemo(() => {
+    return [...schedule.matches].sort((a, b) => {
+      if (a.date_str !== b.date_str) return a.date_str.localeCompare(b.date_str);
+      return (a.time || '').localeCompare(b.time || '');
+    });
+  }, [schedule.matches]);
+
   const getLogoUrl = (teamName: string) => {
     if (!teamName || teamName === 'TBD') return '';
     const normalize = (str: string) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
@@ -20,7 +28,7 @@ export default function PublicDashboard({ unit, schedule }: Props) {
   };
 
   const sortedTeams = useMemo(() => {
-    const standardMatches = schedule.matches.filter(m => m.match_type === 'standard' || !m.match_type);
+    const standardMatches = sortedAllMatches.filter(m => m.match_type === 'standard' || !m.match_type);
     return [...unit.baseTeams].map(t => {
       let w = 0, l = 0, t_ties = 0, pts = 0;
       standardMatches.forEach(m => {
@@ -39,7 +47,7 @@ export default function PublicDashboard({ unit, schedule }: Props) {
       });
       return { ...t, stats: { w, l, t: t_ties, pts } };
     }).sort((a, b) => b.stats.pts - a.stats.pts);
-  }, [unit, schedule]);
+  }, [unit, sortedAllMatches]);
 
   const searchedStudentResult = useMemo(() => {
     if (!searchQuery.trim()) return null;
@@ -59,9 +67,9 @@ export default function PublicDashboard({ unit, schedule }: Props) {
 
     if (!foundPlayer || !baseTeam) return 'NOT_FOUND';
 
-    const playerTimeline: { match: typeof schedule.matches[0], playingAs: string }[] = [];
+    const playerTimeline: { match: Match, playingAs: string }[] = [];
 
-    schedule.matches.forEach(m => {
+    sortedAllMatches.forEach(m => {
       if (m.match_type === 'minigame') {
         const teamSet = unit.teamSets?.find(ts => ts.id === m.team_set_id);
         if (teamSet) {
@@ -87,7 +95,7 @@ export default function PublicDashboard({ unit, schedule }: Props) {
     });
 
     return { player: foundPlayer, team: baseTeam, timeline: playerTimeline };
-  }, [searchQuery, unit, schedule]);
+  }, [searchQuery, unit, sortedAllMatches]);
 
   const { activeSchedule, archivedSchedule } = useMemo(() => {
     const active: Record<string, typeof schedule.matches> = {};
@@ -96,11 +104,11 @@ export default function PublicDashboard({ unit, schedule }: Props) {
     const d = new Date();
     const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-    const allDates = Array.from(new Set(schedule.matches.map(m => m.date_str))).sort();
+    const allDates = Array.from(new Set(sortedAllMatches.map(m => m.date_str)));
     const pastDates = allDates.filter(date => date < todayStr);
     const mostRecentPastDate = pastDates.length > 0 ? pastDates[pastDates.length - 1] : null;
 
-    schedule.matches.forEach(m => {
+    sortedAllMatches.forEach(m => {
       if (m.date_str >= todayStr || m.date_str === mostRecentPastDate) {
         if (!active[m.date_str]) active[m.date_str] = [];
         active[m.date_str].push(m);
@@ -111,13 +119,13 @@ export default function PublicDashboard({ unit, schedule }: Props) {
     });
 
     return { activeSchedule: active, archivedSchedule: archived };
-  }, [schedule]);
+  }, [sortedAllMatches]);
 
   const activeRosterTeams = activeRosterId === 'base' 
     ? unit.baseTeams 
     : unit.teamSets?.find(ts => ts.id === activeRosterId)?.teams || [];
 
-  const bracketMatches = useMemo(() => schedule.matches.filter(m => m.match_type === 'bracket'), [schedule.matches]);
+  const bracketMatches = useMemo(() => sortedAllMatches.filter(m => m.match_type === 'bracket'), [sortedAllMatches]);
 
   const bracketRounds = useMemo(() => {
     const grouped: Record<string, Match[]> = {};
@@ -291,11 +299,11 @@ export default function PublicDashboard({ unit, schedule }: Props) {
         </summary>
         <div className="border-t border-slate-100 p-4 space-y-4">
           
-          {Object.entries(activeSchedule).map(([date, matches]) => (
+          {Object.keys(activeSchedule).sort().map((date) => (
             <div key={date}>
               <div className="bg-slate-100 p-2 font-bold text-slate-700 rounded-md mb-2 text-sm">{date}</div>
               <div className="space-y-2">
-                {matches.map(m => {
+                {activeSchedule[date].map(m => {
                   if (m.match_type === 'minigame') {
                     const teamSet = unit.teamSets?.find(ts => ts.id === m.team_set_id);
                     return (
@@ -364,11 +372,12 @@ export default function PublicDashboard({ unit, schedule }: Props) {
                 <History className="h-4 w-4" />
                 Archived Past Events
               </div>
-              {Object.entries(archivedSchedule).map(([date, matches]) => (
+              {/* Note: Archived sorted so newest is first in history list */}
+              {Object.keys(archivedSchedule).sort((a, b) => b.localeCompare(a)).map((date) => (
                 <div key={date} className="opacity-75 hover:opacity-100 transition-opacity">
                   <div className="bg-slate-50 p-2 font-bold text-slate-500 rounded-md mb-2 text-sm border border-slate-100">{date}</div>
                   <div className="space-y-2 mb-4">
-                    {matches.map(m => {
+                    {archivedSchedule[date].map(m => {
                       if (m.match_type === 'minigame') {
                         return (
                           <div key={m.id} className="flex flex-wrap items-center justify-between bg-slate-50 border border-slate-200 p-3 rounded-lg gap-2 shadow-sm">

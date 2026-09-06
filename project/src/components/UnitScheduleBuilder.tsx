@@ -264,21 +264,27 @@ function ScheduleEditor({
   const [matchType, setMatchType] = useState<MatchType>('standard');
   const [standardTeamSetId, setStandardTeamSetId] = useState<string>('base');
   
-  // Dynamically calculate available teams based on the selected roster source
+  // NEW: Calculate sorted matches by Date & Time
+  const sortedMatches = useMemo(() => {
+    return [...schedule.matches].sort((a, b) => {
+      if (a.date_str !== b.date_str) return a.date_str.localeCompare(b.date_str);
+      return (a.time || '').localeCompare(b.time || '');
+    });
+  }, [schedule.matches]);
+
   const availableTeams = useMemo(() => {
     if (standardTeamSetId === 'base') return teamNames;
     const selectedSet = teamSets.find(ts => ts.id === standardTeamSetId);
     return selectedSet ? selectedSet.teams.map(t => t.name) : [];
   }, [standardTeamSetId, teamNames, teamSets]);
 
-  // When scheduling a bracket match, let them assign "TBD" so they can create the empty slots
   const availableTeamsWithTBD = ['TBD', ...availableTeams];
 
   const [home, setHome] = useState('');
   const [away, setAway] = useState('');
   const [teamSetId, setTeamSetId] = useState(teamSets[0]?.id ?? '');
   
-  const [roundName, setRoundName] = useState('Quarterfinals'); // New bracket field
+  const [roundName, setRoundName] = useState('Quarterfinals'); 
 
   const [date, setDate] = useState('');
   const [time, setTime] = useState('11:15');
@@ -484,7 +490,7 @@ function ScheduleEditor({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {schedule.matches.map((m) => (
+            {sortedMatches.map((m) => (
               <tr key={m.id} className={`hover:bg-slate-50 ${m.match_type === 'minigame' ? 'bg-indigo-50/30' : m.match_type === 'bracket' ? 'bg-amber-50/30' : ''}`}>
                 <td className="px-4 py-2.5">{m.date_str}</td>
                 <td className="px-4 py-2.5">{m.time}</td>
@@ -509,7 +515,7 @@ function ScheduleEditor({
                 </td>
               </tr>
             ))}
-            {schedule.matches.length === 0 && (
+            {sortedMatches.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-6 text-center text-slate-400 font-medium">
                   No matches scheduled for this unit yet.
