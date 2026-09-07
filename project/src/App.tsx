@@ -52,6 +52,10 @@ export default function App() {
   const [publicView, setPublicView] = useState<PublicView>('syllabus');
   const [classes, setClasses] = useState<ClassData[]>(initialClasses);
   const [activeClassId, setActiveClassId] = useState<string>(initialClasses[0].id);
+  
+  // Dedicated memory for the student portal so they don't get stuck on the admin's last view
+  const [studentUnitId, setStudentUnitId] = useState<string | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -59,11 +63,82 @@ export default function App() {
   const skipNextSave = useRef(true);
   const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
-  const activeClass = useMemo(() => classes.find((c) => c.id === activeClassId) ?? classes[0], [classes, activeClassId]);
+  const activeClass = classes.find((c) => c.id === activeClassId) || classes[0];
+
+  // If a student switches classes, reset their local unit selection to force auto-open
+  useEffect(() => {
+    setStudentUnitId(null);
+  }, [activeClassId]);
+
+  // SMART SORTER: Explicitly driven by the Master Calendar (Daily Log)
+  const sortedUnits = useMemo(() => {
+    if (!activeClass || !activeClass.units) return [];
+    const d = new Date();
+    const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+    // Build a timeline map from the Master Calendar
+    const calendarTimeline: Record<string, { firstDate: string, lastDate: string }> = {};
+    
+    if (activeClass.masterCalendar) {
+      activeClass.masterCalendar.forEach(day => {
+        if (day.status === 'school' || day.status === 'half-day') {
+          if (day.unitName) {
+            const name = day.unitName.toLowerCase().trim();
+            if (!calendarTimeline[name]) {
+              calendarTimeline[name] = { firstDate: day.fecha, lastDate: day.fecha };
+            } else {
+              if (day.fecha < calendarTimeline[name].firstDate) calendarTimeline[name].firstDate = day.fecha;
+              if (day.fecha > calendarTimeline[name].lastDate) calendarTimeline[name].lastDate = day.fecha;
+            }
+          }
+        }
+      });
+    }
+
+    return [...activeClass.units].sort((a, b) => {
+      const nameA = (a.unit?.unit_name || '').toLowerCase().trim();
+      const nameB = (b.unit?.unit_name || '').toLowerCase().trim();
+      
+      const tA = calendarTimeline[nameA];
+      const tB = calendarTimeline[nameB];
+
+      const getCategory = (t: { firstDate: string, lastDate: string } | undefined) => {
+        if (!t) return 3; // Unscheduled / Not on Master Calendar
+        if (t.firstDate <= todayStr && t.lastDate >= todayStr) return 0; // Active Right Now
+        if (t.firstDate > todayStr) return 1; // Next / Future
+        return 2; // Past / Finished
+      };
+
+      const catA = getCategory(tA);
+      const catB = getCategory(tB);
+
+      // 1. Sort by Category
+      if (catA !== catB) return catA - catB;
+      
+      // 2. Sort Future Units by Start Date
+      if (catA === 1) return tA.firstDate.localeCompare(tB.firstDate);
+      
+      // 3. Sort Past Units by End Date (Reverse Chronological)
+      if (catA === 2) return tB.lastDate.localeCompare(tA.lastDate);
+      
+      // 4. Sort Unscheduled Alphabetically
+      return nameA.localeCompare(nameB);
+    });
+  }, [activeClass]);
+
+  // ACTIVE UNIT RESOLVER: Splits Admin behavior from Student behavior
   const activeUnitData = useMemo(() => {
     if (!activeClass || !activeClass.units) return null;
-    return activeClass.units.find(u => u.id === activeClass.activeUnitId) || activeClass.units[0];
-  }, [activeClass]);
+    
+    if (route === 'admin') {
+      // Admins stick to whatever they last clicked in the database
+      return activeClass.units.find(u => u.id === activeClass.activeUnitId) || sortedUnits[0] || activeClass.units[0];
+    } else {
+      // Students default to the #1 sorted item instantly, unless they click the dropdown
+      if (studentUnitId) return activeClass.units.find(u => u.id === studentUnitId) || sortedUnits[0];
+      return sortedUnits[0] || activeClass.units[0];
+    }
+  }, [activeClass, sortedUnits, route, studentUnitId]);
 
   const { logs = {}, quarterHistory = {}, floorGrid = {}, roster = [] } = activeClass || {};
   const { unit, schedule, syllabus, wins, teammatePoints } = activeUnitData || { unit: {} as Unit, schedule: {} as ScheduleData, syllabus: {} as SyllabusData, wins: {}, teammatePoints: {} };
@@ -150,16 +225,13 @@ export default function App() {
   const handleDeletePlayer = (id: string) => updateClass((c) => ({ ...c, roster: c.roster.filter(p => p.id !== id), units: c.units.map(u => ({ ...u, unit: { ...u.unit, baseTeams: u.unit.baseTeams.map(t => ({ ...t, players: t.players.filter(p => p.id !== id) })) } })) }));
 
   const handleGenerateTeams = (teams: Team[], teamSetName?: string) => updateActiveUnit((u) => {
-    // If a set name is provided, save it as a dynamic Team Set
     if (teamSetName) {
       const newSet = { id: `ts_${Date.now()}`, name: teamSetName, teams };
       return { ...u, unit: { ...u.unit, teamSets: [...(u.unit.teamSets || []), newSet] } };
     }
-    // Otherwise, overwrite the traditional default baseTeams
     return { ...u, unit: { ...u.unit, baseTeams: teams } };
   });
 
-  // 👇 PASTE THIS NEW FUNCTION RIGHT HERE 👇
   const handleDeleteTeamSet = (teamSetId: string) => updateActiveUnit((u) => ({
     ...u,
     unit: {
@@ -167,8 +239,8 @@ export default function App() {
       teamSets: u.unit.teamSets?.filter(ts => ts.id !== teamSetId)
     }
   }));
-  // 👆 --------------------------------- 👆
-    const handleRenameTeam = (teamId: number, newName: string) => updateActiveUnit((u) => ({ ...u, unit: { ...u.unit, baseTeams: u.unit.baseTeams.map((t) => t.id === teamId ? { ...t, name: newName } : t) } }));
+
+  const handleRenameTeam = (teamId: number, newName: string) => updateActiveUnit((u) => ({ ...u, unit: { ...u.unit, baseTeams: u.unit.baseTeams.map((t) => t.id === teamId ? { ...t, name: newName } : t) } }));
   const handleSwap = (p1Id: string, t1Id: number, p2Id: string, t2Id: number) => updateActiveUnit((u) => {
     const teams = u.unit.baseTeams.map((t) => ({ ...t, players: [...t.players] }));
     const t1 = teams.find((t) => t.id === t1Id); const t2 = teams.find((t) => t.id === t2Id);
@@ -212,48 +284,46 @@ export default function App() {
   
   const handleAddMatch = (m: Omit<Match, 'id'>) => updateActiveUnit((u) => ({ ...u, schedule: { ...u.schedule, matches: [...u.schedule.matches, { ...m, id: genMatchId() }] } }));
   const handleDeleteMatch = (id: number) => updateActiveUnit((u) => ({ ...u, schedule: { ...u.schedule, matches: u.schedule.matches.filter((m) => m.id !== id) } }));
-// NEW: Trickles down a win to every student on a specific team during a Mini-Game
-const handleAwardTeamWin = (teamId: number, teamSetId: string) => updateClass((c) => {
-  const activeUnit = c.units.find(u => u.id === (c.activeUnitId || c.units[0]?.id));
-  if (!activeUnit) return c;
-  const teamSet = activeUnit.unit.teamSets?.find(ts => ts.id === teamSetId);
-  if (!teamSet) return c;
-  const team = teamSet.teams.find(t => t.id === teamId);
-  if (!team) return c;
-  // Find all player IDs on this specific winning team
-  const playerIds = team.players.map(p => p.id);
-  
-  // 1. Update master roster with new wins
-  const nextRoster = c.roster.map(p => 
-    playerIds.includes(p.id) ? { ...p, lifetimeWins: (p.lifetimeWins || 0) + 1 } : p
-  );
-  
-  // 2. Sync those new win totals across all unit team data structures
-  const nextUnits = c.units.map(u => ({
-    ...u,
-    unit: {
-      ...u.unit,
-      baseTeams: u.unit.baseTeams.map(t => ({
-        ...t, players: t.players.map(p => playerIds.includes(p.id) ? { ...p, lifetimeWins: (p.lifetimeWins || 0) + 1 } : p)
-      })),
-      teamSets: u.unit.teamSets?.map(ts => ({
-        ...ts, teams: ts.teams.map(t => ({
+
+  const handleAwardTeamWin = (teamId: number, teamSetId: string) => updateClass((c) => {
+    const activeUnit = c.units.find(u => u.id === (c.activeUnitId || c.units[0]?.id));
+    if (!activeUnit) return c;
+    const teamSet = activeUnit.unit.teamSets?.find(ts => ts.id === teamSetId);
+    if (!teamSet) return c;
+    const team = teamSet.teams.find(t => t.id === teamId);
+    if (!team) return c;
+    
+    const playerIds = team.players.map(p => p.id);
+    
+    const nextRoster = c.roster.map(p => 
+      playerIds.includes(p.id) ? { ...p, lifetimeWins: (p.lifetimeWins || 0) + 1 } : p
+    );
+    
+    const nextUnits = c.units.map(u => ({
+      ...u,
+      unit: {
+        ...u.unit,
+        baseTeams: u.unit.baseTeams.map(t => ({
           ...t, players: t.players.map(p => playerIds.includes(p.id) ? { ...p, lifetimeWins: (p.lifetimeWins || 0) + 1 } : p)
+        })),
+        teamSets: u.unit.teamSets?.map(ts => ({
+          ...ts, teams: ts.teams.map(t => ({
+            ...t, players: t.players.map(p => playerIds.includes(p.id) ? { ...p, lifetimeWins: (p.lifetimeWins || 0) + 1 } : p)
+          }))
         }))
-      }))
+      }
+    }));
+    return { ...c, roster: nextRoster, units: nextUnits };
+  });
+
+  const handleToggleMatchComplete = (matchId: number) => updateActiveUnit((u) => ({
+    ...u,
+    schedule: {
+      ...u.schedule,
+      matches: u.schedule.matches.map(m => m.id === matchId ? { ...m, completed: !m.completed } : m)
     }
   }));
-  return { ...c, roster: nextRoster, units: nextUnits };
-});
 
-// NEW: Allows admins to mark a Mini-Game as completed
-const handleToggleMatchComplete = (matchId: number) => updateActiveUnit((u) => ({
-  ...u,
-  schedule: {
-    ...u.schedule,
-    matches: u.schedule.matches.map(m => m.id === matchId ? { ...m, completed: !m.completed } : m)
-  }
-}));
   const handleUpdateLog = (playerId: string, log: DailyLog) => updateClass((c) => ({ ...c, logs: { ...c.logs, [playerId]: log } }));
   const handleQuickSet = (playerId: string, type: ScoreType) => updateClass((c) => ({ ...c, logs: { ...c.logs, [playerId]: emptyLog(type) } }));
   const handleMarkAll = (type: ScoreType) => updateClass((c) => { const next: DailyLogMap = {}; allPlayerIds(c).forEach((id) => { next[id] = emptyLog(type); }); return { ...c, logs: next }; });
@@ -366,8 +436,15 @@ const handleToggleMatchComplete = (matchId: number) => updateActiveUnit((u) => (
           {activeClass.units && activeClass.units.length > 0 && (
             <div className={`flex items-center gap-1.5 rounded-lg px-2 py-1 ${route === 'admin' ? 'bg-slate-800' : 'bg-blue-800'}`}>
               <Trophy className="h-4 w-4 text-amber-300" />
-              <select value={activeClass.activeUnitId || activeClass.units[0]?.id} onChange={(e) => updateClass(c => ({ ...c, activeUnitId: e.target.value }))} className={`cursor-pointer rounded-md px-2 py-1 text-sm font-semibold text-white border-0 outline-none max-w-[150px] truncate ${route === 'admin' ? 'bg-slate-800' : 'bg-blue-800'}`}>
-                {activeClass.units.map((u) => <option key={u.id} value={u.id}>{u.unit.unit_name}</option>)}
+              <select 
+                value={activeUnitData?.id || ''} 
+                onChange={(e) => {
+                  if (route === 'admin') updateClass(c => ({ ...c, activeUnitId: e.target.value }));
+                  else setStudentUnitId(e.target.value);
+                }} 
+                className={`cursor-pointer rounded-md px-2 py-1 text-sm font-semibold text-white border-0 outline-none max-w-[150px] truncate ${route === 'admin' ? 'bg-slate-800' : 'bg-blue-800'}`}
+              >
+                {sortedUnits.map((u) => <option key={u.id} value={u.id}>{u.unit.unit_name}</option>)}
               </select>
               {route === 'admin' && (
                 <button onClick={handleCreateNewUnit} title="Create New Unit" className="ml-1 p-1 hover:bg-slate-700 rounded text-emerald-400">
@@ -441,7 +518,7 @@ const handleToggleMatchComplete = (matchId: number) => updateActiveUnit((u) => (
                 units={activeClass.units || []} 
                 classId={activeClassId}
                 onNavigateToUnit={(unitId) => {
-                  updateClass(c => ({ ...c, activeUnitId: unitId }));
+                  setStudentUnitId(unitId); 
                   setPublicView('dashboard');
                 }} 
               />
