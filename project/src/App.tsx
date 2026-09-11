@@ -1,11 +1,11 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Shield, Eye, Users, CalendarDays, LogIn, LogOut, BookOpen, LayoutDashboard,
-  ClipboardCheck, Star, ClipboardList, Wand2, Grid3x3, Trophy, School, Loader2, CloudOff, Cloud, Activity, Plus, Lock
+  ClipboardCheck, Star, ClipboardList, Wand2, Grid3x3, Trophy, School, Loader2, CloudOff, Cloud, Activity, Plus, Lock, ListTodo, FileSpreadsheet
 } from 'lucide-react';
 import type {
   ClassData, Unit, ScheduleData, SyllabusData, DailyLogMap, DailyLog, ScoreType,
-  QuarterHistoryMap, AttendanceMap, Player, Team, Match, UnitData
+  QuarterHistoryMap, AttendanceMap, Player, Team, Match, UnitData, DailyTeamSnapshot
 } from './types';
 import { initialClasses } from './data';
 import { emptyLog } from './grading';
@@ -22,15 +22,18 @@ import UnitScheduleBuilder from './components/UnitScheduleBuilder';
 import Leaderboards from './components/Leaderboards';
 import WorkoutPlayer from './components/WorkoutPlayer';
 import MasterCalendarBuilder from './components/MasterCalendarBuilder';
+import DailyPlanner from './components/DailyPlanner';
 
-type AdminView = 'teams' | 'schedule' | 'attendance' | 'grades' | 'roster' | 'teamcreator' | 'calendar'| 'builder';
+type AdminView = 'teams' | 'schedule' | 'attendance' | 'grades' | 'roster' | 'teamcreator' | 'calendar'| 'builder' | 'planner';
 type PublicView = 'syllabus' | 'dashboard' | 'leaderboards' | 'workout';
 
 const allPlayerIds = (c: ClassData): string[] => c.roster?.map((p) => p.id) || [];
+
+// UPDATE: Zero days now trigger an 'absent' status for team structuring so they are subbed out
 const deriveAttendance = (logs: DailyLogMap): AttendanceMap => {
   const map: AttendanceMap = {};
   Object.entries(logs).forEach(([id, log]) => {
-    if (log.scoreType === 'absent') map[id] = 'absent';
+    if (log.scoreType === 'absent' || log.scoreType === 'zero') map[id] = 'absent';
     else if (log.scoreType === 'tardy') map[id] = 'late';
     else map[id] = 'present';
   });
@@ -53,8 +56,12 @@ export default function App() {
   const [classes, setClasses] = useState<ClassData[]>(initialClasses);
   const [activeClassId, setActiveClassId] = useState<string>(initialClasses[0].id);
   
-  // Dedicated memory for the student portal so they don't get stuck on the admin's last view
   const [studentUnitId, setStudentUnitId] = useState<string | null>(null);
+
+  const [attendanceDate, setAttendanceDate] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  });
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -65,18 +72,15 @@ export default function App() {
 
   const activeClass = classes.find((c) => c.id === activeClassId) || classes[0];
 
-  // If a student switches classes, reset their local unit selection to force auto-open
   useEffect(() => {
     setStudentUnitId(null);
   }, [activeClassId]);
 
-  // SMART SORTER: Explicitly driven by the Master Calendar (Daily Log)
   const sortedUnits = useMemo(() => {
     if (!activeClass || !activeClass.units) return [];
     const d = new Date();
     const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-    // Build a timeline map from the Master Calendar
     const calendarTimeline: Record<string, { firstDate: string, lastDate: string }> = {};
     
     if (activeClass.masterCalendar) {
@@ -103,47 +107,53 @@ export default function App() {
       const tB = calendarTimeline[nameB];
 
       const getCategory = (t: { firstDate: string, lastDate: string } | undefined) => {
-        if (!t) return 3; // Unscheduled / Not on Master Calendar
-        if (t.firstDate <= todayStr && t.lastDate >= todayStr) return 0; // Active Right Now
-        if (t.firstDate > todayStr) return 1; // Next / Future
-        return 2; // Past / Finished
+        if (!t) return 3; 
+        if (t.firstDate <= todayStr && t.lastDate >= todayStr) return 0; 
+        if (t.firstDate > todayStr) return 1; 
+        return 2; 
       };
 
       const catA = getCategory(tA);
       const catB = getCategory(tB);
 
-      // 1. Sort by Category
       if (catA !== catB) return catA - catB;
-      
-      // 2. Sort Future Units by Start Date
       if (catA === 1) return tA.firstDate.localeCompare(tB.firstDate);
-      
-      // 3. Sort Past Units by End Date (Reverse Chronological)
       if (catA === 2) return tB.lastDate.localeCompare(tA.lastDate);
-      
-      // 4. Sort Unscheduled Alphabetically
       return nameA.localeCompare(nameB);
     });
   }, [activeClass]);
 
-  // ACTIVE UNIT RESOLVER: Splits Admin behavior from Student behavior
   const activeUnitData = useMemo(() => {
     if (!activeClass || !activeClass.units) return null;
     
     if (route === 'admin') {
-      // Admins stick to whatever they last clicked in the database
       return activeClass.units.find(u => u.id === activeClass.activeUnitId) || sortedUnits[0] || activeClass.units[0];
     } else {
-      // Students default to the #1 sorted item instantly, unless they click the dropdown
       if (studentUnitId) return activeClass.units.find(u => u.id === studentUnitId) || sortedUnits[0];
       return sortedUnits[0] || activeClass.units[0];
     }
   }, [activeClass, sortedUnits, route, studentUnitId]);
 
-  const { logs = {}, quarterHistory = {}, floorGrid = {}, roster = [] } = activeClass || {};
+  const { logs = {}, gradebook = {}, quarterHistory = {}, floorGrid = {}, roster = [] } = activeClass || {};
   const { unit, schedule, syllabus, wins, teammatePoints } = activeUnitData || { unit: {} as Unit, schedule: {} as ScheduleData, syllabus: {} as SyllabusData, wins: {}, teammatePoints: {} };
 
-  const attendance = deriveAttendance(logs);
+  const activeDailyLogs = gradebook[attendanceDate] || {};
+  const attendance = deriveAttendance(activeDailyLogs);
+
+  // AUTO A/B DAY DETECTOR
+  const classMeetsToday = useMemo(() => {
+    if (!activeClass.masterCalendar) return true;
+    const todayObj = activeClass.masterCalendar.find(d => d.fecha === attendanceDate);
+    if (!todayObj) return true; 
+    if (todayObj.status === 'no-class' || todayObj.status === 'no-school') return false;
+    
+    const className = activeClass.id.toUpperCase();
+    if (className.includes('A') && todayObj.ciclo === 'B') return false;
+    if (className.includes('B') && todayObj.ciclo === 'A') return false;
+    
+    return true;
+  }, [activeClass, attendanceDate]);
+
   const teamNames = useMemo(() => unit?.baseTeams?.map((t) => t.name) || [], [unit]);
 
   useEffect(() => {
@@ -183,7 +193,14 @@ export default function App() {
                 return u;
               });
 
-              return { ...c, units, activeUnitId: c.activeUnitId || units[0]?.id, roster: c.roster || [] };
+              let newGradebook = c.gradebook || {};
+              if (!c.gradebook && c.logs && Object.keys(c.logs).length > 0) {
+                 const d = new Date();
+                 const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                 newGradebook = { [todayStr]: c.logs };
+              }
+
+              return { ...c, units, activeUnitId: c.activeUnitId || units[0]?.id, roster: c.roster || [], gradebook: newGradebook };
             });
             
             setClasses(migratedClasses);
@@ -226,6 +243,12 @@ export default function App() {
 
   const handleGenerateTeams = (teams: Team[], teamSetName?: string) => updateActiveUnit((u) => {
     if (teamSetName) {
+      const existingSetIndex = u.unit.teamSets?.findIndex(ts => ts.name.toLowerCase() === teamSetName.toLowerCase());
+      if (existingSetIndex !== undefined && existingSetIndex >= 0) {
+        const newSets = [...(u.unit.teamSets || [])];
+        newSets[existingSetIndex] = { ...newSets[existingSetIndex], teams };
+        return { ...u, unit: { ...u.unit, teamSets: newSets } };
+      }
       const newSet = { id: `ts_${Date.now()}`, name: teamSetName, teams };
       return { ...u, unit: { ...u.unit, teamSets: [...(u.unit.teamSets || []), newSet] } };
     }
@@ -263,27 +286,108 @@ export default function App() {
     return { ...u, unit: { ...u.unit, baseTeams: teams } };
   });
 
-  const handleUpdateScore = (matchId: number, side: 'home' | 'away', value: number | null) => updateActiveUnit((u) => {
+  // GAME DAY / DAILY TEAMS HANDLERS
+  const handleInitDailyTeams = (dateStr: string, sourceId: string) => updateClass(c => {
+    const u = c.units.find(un => un.id === (c.activeUnitId || c.units[0]?.id));
+    if (!u) return c;
+    let sourceTeams: Team[] = [];
+    if (sourceId === 'base') sourceTeams = u.unit.baseTeams;
+    else {
+      const ts = u.unit.teamSets?.find(t => t.id === sourceId);
+      if (ts) sourceTeams = ts.teams;
+    }
+    if (!sourceTeams.length) return c;
+    const snapshot: DailyTeamSnapshot = {
+      baseTeamSetId: sourceId,
+      teams: JSON.parse(JSON.stringify(sourceTeams)) 
+    };
+    return { ...c, dailyTeams: { ...(c.dailyTeams || {}), [dateStr]: snapshot } };
+  });
+
+  const handleClearDailyTeams = (dateStr: string) => updateClass(c => {
+    const nextDaily = { ...(c.dailyTeams || {}) };
+    delete nextDaily[dateStr];
+    return { ...c, dailyTeams: nextDaily };
+  });
+
+  const handleDailySwap = (dateStr: string, p1Id: string, t1Id: number, p2Id: string, t2Id: number) => updateClass(c => {
+    const snap = c.dailyTeams?.[dateStr];
+    if (!snap) return c;
+    const teams = snap.teams.map(t => ({ ...t, players: [...t.players] }));
+    const t1 = teams.find(t => t.id === t1Id);
+    const t2 = teams.find(t => t.id === t2Id);
+    if (!t1 || !t2) return c;
+    const i1 = t1.players.findIndex(p => p.id === p1Id);
+    const i2 = t2.players.findIndex(p => p.id === p2Id);
+    if (i1 === -1 || i2 === -1) return c;
+    const tmp = t1.players[i1];
+    t1.players[i1] = t2.players[i2];
+    t2.players[i2] = tmp;
+    return { ...c, dailyTeams: { ...c.dailyTeams, [dateStr]: { ...snap, teams } } };
+  });
+
+  const handleDailyMove = (dateStr: string, playerId: string, fromTeamId: number, toTeamId: number) => updateClass(c => {
+    const snap = c.dailyTeams?.[dateStr];
+    if (!snap) return c;
+    let movedPlayer: Player | null = null;
+    const teams = snap.teams.map((t) => {
+      const idx = t.players.findIndex((p) => p.id === playerId);
+      if (idx !== -1) { movedPlayer = t.players[idx]; return { ...t, players: t.players.filter((p) => p.id !== playerId) }; }
+      return t;
+    });
+    if (!movedPlayer) return c;
+    const target = teams.find((t) => t.id === toTeamId);
+    if (target) target.players = [...target.players, movedPlayer];
+    return { ...c, dailyTeams: { ...c.dailyTeams, [dateStr]: { ...snap, teams } } };
+  });
+
+  const handleDailyRename = (dateStr: string, teamId: number, newName: string) => updateClass(c => {
+    const snap = c.dailyTeams?.[dateStr];
+    if (!snap) return c;
+    const teams = snap.teams.map(t => t.id === teamId ? { ...t, name: newName } : t);
+    return { ...c, dailyTeams: { ...c.dailyTeams, [dateStr]: { ...snap, teams } } };
+  });
+
+  const handleUpdateScore = (matchId: number, side: 'home' | 'away', value: number | null) => updateClass((c) => {
+    const u = c.units.find(un => un.id === (c.activeUnitId || c.units[0]?.id));
+    if (!u) return c;
+
     const matches = u.schedule.matches.map((m) => m.id === matchId ? { ...m, [side === 'home' ? 'home_score' : 'away_score']: value, completed: (side === 'home' ? value : m.home_score) !== null && (side === 'away' ? value : m.away_score) !== null } : m);
     const match = matches.find((m) => m.id === matchId);
+    
     if (match && match.completed && match.home_score !== null && match.away_score !== null) {
       if (!u.schedule.matches.find((m) => m.id === matchId)?.completed) {
         const winnerName = match.home_score > match.away_score ? match.home_team : match.away_score > match.home_score ? match.away_team : null;
         if (winnerName) {
-          const winnerTeam = u.unit.baseTeams.find((t) => t.name === winnerName);
+          
+          // UPDATE: Checks Daily Teams snapshot for the match date first, otherwise falls back to master team set!
+          const targetSet = c.dailyTeams?.[match.date_str] 
+              ? c.dailyTeams[match.date_str].teams
+              : (match.team_set_id && match.team_set_id !== 'base'
+                  ? u.unit.teamSets?.find(ts => ts.id === match.team_set_id)?.teams
+                  : u.unit.baseTeams);
+              
+          const winnerTeam = targetSet?.find((t) => t.name === winnerName);
           if (winnerTeam) {
             const nextWins = { ...u.wins };
             winnerTeam.players.forEach((p) => { nextWins[p.id] = (nextWins[p.id] ?? 0) + 1; });
-            return { ...u, schedule: { ...u.schedule, matches }, wins: nextWins };
+            return { ...c, units: c.units.map(un => un.id === u.id ? { ...u, schedule: { ...u.schedule, matches }, wins: nextWins } : un) };
           }
         }
       }
     }
-    return { ...u, schedule: { ...u.schedule, matches } };
+    return { ...c, units: c.units.map(un => un.id === u.id ? { ...u, schedule: { ...u.schedule, matches } } : un) };
   });
   
   const handleAddMatch = (m: Omit<Match, 'id'>) => updateActiveUnit((u) => ({ ...u, schedule: { ...u.schedule, matches: [...u.schedule.matches, { ...m, id: genMatchId() }] } }));
   const handleDeleteMatch = (id: number) => updateActiveUnit((u) => ({ ...u, schedule: { ...u.schedule, matches: u.schedule.matches.filter((m) => m.id !== id) } }));
+  const handleUpdateMatch = (matchId: number, updates: Partial<Match>) => updateActiveUnit((u) => ({
+    ...u,
+    schedule: {
+      ...u.schedule,
+      matches: u.schedule.matches.map(m => m.id === matchId ? { ...m, ...updates } : m)
+    }
+  }));
 
   const handleAwardTeamWin = (teamId: number, teamSetId: string) => updateClass((c) => {
     const activeUnit = c.units.find(u => u.id === (c.activeUnitId || c.units[0]?.id));
@@ -324,9 +428,29 @@ export default function App() {
     }
   }));
 
-  const handleUpdateLog = (playerId: string, log: DailyLog) => updateClass((c) => ({ ...c, logs: { ...c.logs, [playerId]: log } }));
-  const handleQuickSet = (playerId: string, type: ScoreType) => updateClass((c) => ({ ...c, logs: { ...c.logs, [playerId]: emptyLog(type) } }));
-  const handleMarkAll = (type: ScoreType) => updateClass((c) => { const next: DailyLogMap = {}; allPlayerIds(c).forEach((id) => { next[id] = emptyLog(type); }); return { ...c, logs: next }; });
+  const handleUpdateGradebookLog = (dateStr: string, playerId: string, log: DailyLog) => updateClass((c) => {
+    const nextGradebook = { ...(c.gradebook || {}) };
+    const dateLogs = { ...(nextGradebook[dateStr] || {}) };
+    dateLogs[playerId] = log;
+    nextGradebook[dateStr] = dateLogs;
+    return { ...c, gradebook: nextGradebook };
+  });
+
+  const handleQuickSetGradebook = (dateStr: string, playerId: string, type: ScoreType) => updateClass((c) => {
+    const nextGradebook = { ...(c.gradebook || {}) };
+    const dateLogs = { ...(nextGradebook[dateStr] || {}) };
+    dateLogs[playerId] = emptyLog(type);
+    nextGradebook[dateStr] = dateLogs;
+    return { ...c, gradebook: nextGradebook };
+  });
+
+  const handleMarkAllGradebook = (dateStr: string, type: ScoreType) => updateClass((c) => {
+    const nextGradebook = { ...(c.gradebook || {}) };
+    const dateLogs: DailyLogMap = {};
+    allPlayerIds(c).forEach((id) => { dateLogs[id] = emptyLog(type); });
+    nextGradebook[dateStr] = dateLogs;
+    return { ...c, gradebook: nextGradebook };
+  });
 
   const handleCreateNewUnit = () => {
     const timestamp = Date.now();
@@ -459,10 +583,11 @@ export default function App() {
               <NavButton active={adminView === 'teams'} onClick={() => setAdminView('teams')} icon={<Users className="h-4 w-4" />}>Teams</NavButton>
               <NavButton active={adminView === 'schedule'} onClick={() => setAdminView('schedule')} icon={<CalendarDays className="h-4 w-4" />}>Scores</NavButton>
               <NavButton active={adminView === 'attendance'} onClick={() => setAdminView('attendance')} icon={<ClipboardCheck className="h-4 w-4" />}>Logs</NavButton>
+              <NavButton active={adminView === 'grades'} onClick={() => setAdminView('grades')} icon={<FileSpreadsheet className="h-4 w-4" />}>Grades</NavButton>
               <NavButton active={adminView === 'roster'} onClick={() => setAdminView('roster')} icon={<ClipboardList className="h-4 w-4" />}>Roster</NavButton>
               <NavButton active={adminView === 'teamcreator'} onClick={() => setAdminView('teamcreator')} icon={<Wand2 className="h-4 w-4" />}>Generator</NavButton>
-              <NavButton active={adminView === 'builder'} onClick={() => setAdminView('builder')} icon={<Grid3x3 className="h-4 w-4" />}>Builder</NavButton>
               <NavButton active={adminView === 'calendar'} onClick={() => setAdminView('calendar')} icon={<CalendarDays className="h-4 w-4" />}>Calendar</NavButton>
+              <NavButton active={adminView === 'planner'} onClick={() => setAdminView('planner')} icon={<ListTodo className="h-4 w-4" />}>Planner</NavButton>
             </nav>
           ) : (
             <nav className="flex gap-2">
@@ -489,16 +614,58 @@ export default function App() {
         <div className="mx-auto flex-1 w-full max-w-7xl px-4 py-6">
           {route === 'admin' ? (
             <>
-              {adminView === 'teams' ? <TeamManager key={`teams-${unit.unit_id}`} unit={unit} isAdmin={true} onSwap={handleSwap} onMove={handleMovePlayer} attendance={attendance} onRenameTeam={handleRenameTeam} />
+              {adminView === 'teams' ? (
+                <TeamManager 
+                  key={`teams-${unit.unit_id}-${attendanceDate}`} 
+                  unit={unit} 
+                  isAdmin={true} 
+                  dateStr={attendanceDate}
+                  dailyTeams={activeClass.dailyTeams || {}}
+                  attendance={attendance}
+                  onInitDaily={(setId) => handleInitDailyTeams(attendanceDate, setId)}
+                  onClearDaily={() => handleClearDailyTeams(attendanceDate)}
+                  onSwapDaily={(p1, t1, p2, t2) => handleDailySwap(attendanceDate, p1, t1, p2, t2)}
+                  onMoveDaily={(p, f, t) => handleDailyMove(attendanceDate, p, f, t)}
+                  onRenameDaily={(t, name) => handleDailyRename(attendanceDate, t, name)}
+                  onSwapMaster={handleSwap} 
+                  onMoveMaster={handleMovePlayer} 
+                  onRenameMaster={handleRenameTeam} 
+                  onPreviewStudentView={() => { setRoute('student'); setPublicView('dashboard'); }} 
+                />
+              )
               : adminView === 'schedule' ? <ScheduleStandings key={`sched-${unit.unit_id}`} unit={unit} schedule={schedule} isAdmin={true} onUpdateScore={handleUpdateScore} onAwardTeamWin={handleAwardTeamWin} onToggleMatchComplete={handleToggleMatchComplete} />
-              : adminView === 'attendance' ? <AttendanceTracker key={`att-${unit.unit_id}`} roster={roster} unit={unit} logs={logs} quarterHistory={quarterHistory} floorGrid={floorGrid} onUpdateLog={handleUpdateLog} onQuickSet={handleQuickSet} onMarkAll={handleMarkAll} onUpdatePlayer={handleUpdatePlayer} onUpdateFloorGrid={(g) => updateClass((c) => ({ ...c, floorGrid: g }))} />
-              : adminView === 'grades' ? <DailyGrades key={`grades-${unit.unit_id}`} roster={roster} unit={unit} logs={logs} quarterHistory={quarterHistory} />
+              : adminView === 'attendance' ? (
+                  <div className="space-y-4">
+                    <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                       <h3 className="font-bold text-slate-800 flex items-center gap-2 text-lg"><CalendarDays className="w-5 h-5 text-blue-600"/> Cumulative Gradebook Date</h3>
+                       <div className="flex items-center gap-2">
+                         <span className="text-sm font-semibold text-slate-500">Viewing Log For:</span>
+                         <input type="date" value={attendanceDate} onChange={(e) => setAttendanceDate(e.target.value)} className="border border-slate-300 rounded-lg px-3 py-2 font-bold text-slate-700 outline-none focus:border-blue-500 shadow-sm" />
+                       </div>
+                    </div>
+                    <AttendanceTracker 
+                       key={`att-${unit.unit_id}-${attendanceDate}`} 
+                       roster={roster} 
+                       unit={unit} 
+                       logs={activeDailyLogs} 
+                       quarterHistory={quarterHistory} 
+                       floorGrid={floorGrid}
+                       classMeetsToday={classMeetsToday} 
+                       onUpdateLog={(playerId, log) => handleUpdateGradebookLog(attendanceDate, playerId, log)} 
+                       onQuickSet={(playerId, type) => handleQuickSetGradebook(attendanceDate, playerId, type)} 
+                       onMarkAll={(type) => handleMarkAllGradebook(attendanceDate, type)} 
+                       onUpdatePlayer={handleUpdatePlayer} 
+                       onUpdateFloorGrid={(g) => updateClass((c) => ({ ...c, floorGrid: g }))} 
+                    />
+                  </div>
+                )
+              : adminView === 'grades' ? <DailyGrades key={`grades-${unit.unit_id}`} roster={roster} gradebook={gradebook} />
               : adminView === 'roster' ? <RosterManager key={`roster-${activeClassId}`} roster={roster} unit={unit} floorGrid={floorGrid} classId={activeClassId} onAddPlayer={handleAddPlayer} onBulkAddPlayers={handleBulkAddPlayers} onUpdatePlayer={handleUpdatePlayer} onDeletePlayer={handleDeletePlayer} onUpdateFloorGrid={(g) => updateClass((c) => ({ ...c, floorGrid: g }))} />
               : adminView === 'teamcreator' ? <TeamCreator key={`tc-${unit.unit_id}`} roster={roster} unit={unit} onGenerate={handleGenerateTeams} onMovePlayer={handleMovePlayer} onDeleteTeamSet={handleDeleteTeamSet} />
               : adminView === 'calendar' ? <MasterCalendarBuilder key={`cal-${activeClassId}`} calendar={activeClass.masterCalendar || []} classId={activeClassId} onSave={(cal) => updateClass(c => ({ ...c, masterCalendar: cal }))} />
-              : <UnitScheduleBuilder key={`builder-${unit.unit_id}`} unitName={unit.unit_name} onUpdateUnitName={handleUpdateUnitName} syllabus={syllabus} schedule={schedule} teamNames={teamNames} teamSets={unit.teamSets} onUpdateSyllabus={handleUpdateSyllabus} onAddMatch={handleAddMatch} onDeleteMatch={handleDeleteMatch} />}
+              : adminView === 'planner' ? <DailyPlanner key={`plan-${activeClassId}`} calendar={activeClass.masterCalendar || []} units={activeClass.units || []} onUpdateCalendarDay={(dateStr, updates) => updateClass(c => ({ ...c, masterCalendar: (c.masterCalendar || []).map(day => day.fecha === dateStr ? { ...day, ...updates } : day) }))} />
+              : <UnitScheduleBuilder key={`builder-${unit.unit_id}`} unitName={unit.unit_name} onUpdateUnitName={handleUpdateUnitName} syllabus={syllabus} schedule={schedule} teamNames={teamNames} teamSets={unit.teamSets} onUpdateSyllabus={handleUpdateSyllabus} onAddMatch={handleAddMatch} onUpdateMatch={handleUpdateMatch} onDeleteMatch={handleDeleteMatch} />}
 
-              {/* DANGER ZONE - Only visible inside the Builder tab */}
               {adminView === 'builder' && (
                 <div className="mt-16 border-t border-red-200 pt-8 pb-8">
                   <div className="mx-auto max-w-xl rounded-xl border border-red-200 bg-red-50 p-6 text-center shadow-sm">
@@ -523,7 +690,7 @@ export default function App() {
                 }} 
               />
           ) : publicView === 'syllabus' ? <UnitSyllabus key={`syl-${unit.unit_id}`} syllabus={syllabus} unitName={unit.unit_name} />
-            : <PublicDashboard key={`pub-${unit.unit_id}`} unit={unit} schedule={schedule} />
+            : <PublicDashboard key={`pub-${unit.unit_id}`} unit={unit} schedule={schedule} dailySnapshot={activeClass.dailyTeams?.[attendanceDate]} />
           }
         </div>
       )}

@@ -15,6 +15,19 @@ export interface Player {
   teammateVotes?: number;
 }
 
+export interface LessonPlanItem {
+  id: string;
+  time: string;
+  activity: string;
+  details: string;
+}
+
+export interface LessonPlan {
+  linkedSyllabusDay?: number | null; 
+  goals?: string;
+  timeline: LessonPlanItem[];
+}
+
 export interface CalendarDay {
   fecha: string;
   ciclo: 'A' | 'B' | null;
@@ -24,6 +37,7 @@ export interface CalendarDay {
   manualOverride: boolean;
   unitName?: string;
   activity?: string;
+  lessonPlan?: LessonPlan;
 }
 
 export interface Team {
@@ -50,7 +64,6 @@ export interface Unit {
   teamSets?: TeamSet[]; 
 }
 
-// --- UPGRADED: Added 'bracket' ---
 export type MatchType = 'standard' | 'minigame' | 'bracket';
 
 export interface Match {
@@ -65,7 +78,7 @@ export interface Match {
   time: string;
   location: string;
   completed: boolean;
-  round_name?: string; // NEW: E.g., "Quarterfinals", "Championship"
+  round_name?: string; 
 }
 
 export interface StandingRow {
@@ -84,8 +97,6 @@ export interface ScheduleData {
   matches: Match[];
   standings: Standings;
 }
-
-// --- Unit Syllabus (student-facing) ---
 
 export interface MediaImage {
   file: string;
@@ -137,7 +148,6 @@ export interface SyllabusData {
   global_connections?: GlobalConnections;
 }
 
-// --- Admin classroom management ---
 export type AttendanceStatus = 'present' | 'absent' | 'late';
 export type AttendanceMap = Record<string, AttendanceStatus>;
 export type GradeMap = Record<string, number>;
@@ -189,6 +199,11 @@ export type FloorGrid = Record<string, FloorSpot>;
 export type WinMap = Record<string, number>;
 export type TeammatePointMap = Record<string, number>;
 
+export interface DailyTeamSnapshot {
+  baseTeamSetId: string; 
+  teams: Team[];         
+}
+
 export interface UnitData {
   id: string;
   unit: Unit;
@@ -202,6 +217,8 @@ export interface ClassData {
   id: string;
   roster: Player[];
   logs: DailyLogMap;
+  gradebook?: Record<string, DailyLogMap>;
+  dailyTeams?: Record<string, DailyTeamSnapshot>; 
   quarterHistory: QuarterHistoryMap;
   floorGrid: FloorGrid;
   units: UnitData[];

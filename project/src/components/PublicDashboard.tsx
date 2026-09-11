@@ -11,7 +11,6 @@ export default function PublicDashboard({ unit, schedule }: Props) {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeRosterId, setActiveRosterId] = useState<string>('base');
 
-  // Ensure all schedule arrays are perfectly sorted chronologically
   const sortedAllMatches = useMemo(() => {
     return [...schedule.matches].sort((a, b) => {
       if (a.date_str !== b.date_str) return a.date_str.localeCompare(b.date_str);
@@ -71,9 +70,12 @@ export default function PublicDashboard({ unit, schedule }: Props) {
 
     sortedAllMatches.forEach(m => {
       if (m.match_type === 'minigame') {
-        const teamSet = unit.teamSets?.find(ts => ts.id === m.team_set_id);
-        if (teamSet) {
-          const specificTeam = teamSet.teams.find(t => t.players.some(p => p.id === foundPlayer!.id));
+        // FIX: Look up Custom Teams OR Base Teams
+        const isBase = !m.team_set_id || m.team_set_id === 'base';
+        const displayTeams = isBase ? unit.baseTeams : unit.teamSets?.find(ts => ts.id === m.team_set_id)?.teams;
+        
+        if (displayTeams) {
+          const specificTeam = displayTeams.find(t => t.players.some(p => p.id === foundPlayer!.id));
           if (specificTeam) {
             playerTimeline.push({ match: m, playingAs: specificTeam.name });
           }
@@ -305,7 +307,10 @@ export default function PublicDashboard({ unit, schedule }: Props) {
               <div className="space-y-2">
                 {activeSchedule[date].map(m => {
                   if (m.match_type === 'minigame') {
-                    const teamSet = unit.teamSets?.find(ts => ts.id === m.team_set_id);
+                    // FIX: Check if we are using Base Teams or a custom Team Set
+                    const isBase = !m.team_set_id || m.team_set_id === 'base';
+                    const displayTeams = isBase ? unit.baseTeams : unit.teamSets?.find(ts => ts.id === m.team_set_id)?.teams;
+                    
                     return (
                       <div key={m.id} className="flex flex-col bg-indigo-50/30 border border-indigo-200 p-3 rounded-lg gap-3 shadow-sm">
                         <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
@@ -319,7 +324,7 @@ export default function PublicDashboard({ unit, schedule }: Props) {
                           </div>
                         </div>
                         <div className="flex flex-wrap gap-2 justify-center py-2">
-                          {teamSet ? teamSet.teams.map(t => (
+                          {displayTeams ? displayTeams.map(t => (
                             <div key={t.id} className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-1.5 rounded-full shadow-sm text-sm font-bold text-slate-700">
                               <img src={getLogoUrl(t.name)} onError={e => e.currentTarget.style.display='none'} className="w-5 h-5 object-contain" alt=""/>
                               {t.name}
@@ -372,21 +377,38 @@ export default function PublicDashboard({ unit, schedule }: Props) {
                 <History className="h-4 w-4" />
                 Archived Past Events
               </div>
-              {/* Note: Archived sorted so newest is first in history list */}
               {Object.keys(archivedSchedule).sort((a, b) => b.localeCompare(a)).map((date) => (
                 <div key={date} className="opacity-75 hover:opacity-100 transition-opacity">
                   <div className="bg-slate-50 p-2 font-bold text-slate-500 rounded-md mb-2 text-sm border border-slate-100">{date}</div>
                   <div className="space-y-2 mb-4">
                     {archivedSchedule[date].map(m => {
                       if (m.match_type === 'minigame') {
+                        // FIX: Check if we are using Base Teams or a custom Team Set (Grayscale for history)
+                        const isBase = !m.team_set_id || m.team_set_id === 'base';
+                        const displayTeams = isBase ? unit.baseTeams : unit.teamSets?.find(ts => ts.id === m.team_set_id)?.teams;
+
                         return (
-                          <div key={m.id} className="flex flex-wrap items-center justify-between bg-slate-50 border border-slate-200 p-3 rounded-lg gap-2 shadow-sm">
-                             <div className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+                          <div key={m.id} className="flex flex-col bg-slate-50 border border-slate-200 p-3 rounded-lg gap-3 shadow-sm opacity-80">
+                            <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
+                              <div className="flex items-center gap-2">
                                 <span>🕒 {m.time}</span>
                                 <span>•</span>
                                 <span className="text-slate-500 font-bold flex items-center gap-1"><MapPin className="w-3 h-3"/> {m.location || 'Main Gym'}</span>
                               </div>
-                              <div className="font-bold text-slate-600 flex items-center gap-1.5"><Users className="w-4 h-4"/> Mini-Games / Relays</div>
+                              <div className="flex items-center gap-1 text-slate-600 bg-slate-200 px-2 py-0.5 rounded font-black uppercase tracking-wider">
+                                <Users className="w-3 h-3" /> Mini-Games
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-2 justify-center py-2">
+                              {displayTeams ? displayTeams.map(t => (
+                                <div key={t.id} className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-1.5 rounded-full shadow-sm text-sm font-bold text-slate-500 grayscale">
+                                  <img src={getLogoUrl(t.name)} onError={e => e.currentTarget.style.display='none'} className="w-5 h-5 object-contain opacity-60" alt=""/>
+                                  {t.name}
+                                </div>
+                              )) : (
+                                <span className="text-slate-400 italic text-sm">Teams not found.</span>
+                              )}
+                            </div>
                           </div>
                         );
                       }

@@ -263,17 +263,16 @@ export default function TeamCreator({ roster, unit, onGenerate, onDeleteTeamSet 
                 </span>
                 
                 <div className="ml-1 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                  <button 
-                    onClick={() => {
-                      setPreview(ts.teams);
-                      setNewSetName(ts.name);
-                      onDeleteTeamSet(ts.id); 
-                    }}
-                    className="rounded p-1 text-indigo-400 hover:bg-indigo-50 hover:text-indigo-700"
-                    title="Edit (Loads into preview)"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </button>
+                <button 
+    onClick={() => {
+      setPreview(ts.teams);
+      setNewSetName(ts.name);
+    }}
+    className="rounded p-1 text-indigo-400 hover:bg-indigo-50 hover:text-indigo-700"
+    title="Edit Set (Loads into preview)"
+  >
+    <Pencil className="h-3.5 w-3.5" />
+  </button>
                   <button 
                     onClick={() => onDeleteTeamSet(ts.id)}
                     className="rounded p-1 text-slate-400 hover:bg-red-50 hover:text-red-500"

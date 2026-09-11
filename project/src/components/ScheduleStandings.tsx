@@ -207,7 +207,10 @@ function MatchCard({ match, unit, isAdmin, onUpdateScore, onAwardTeamWin, onTogg
   const awayVal = match.away_score ?? '';
 
   if (match.match_type === 'minigame') {
-    const teamSet = unit.teamSets?.find((ts: any) => ts.id === match.team_set_id);
+    const isBase = !match.team_set_id || match.team_set_id === 'base';
+    const displayTeams = isBase ? unit.baseTeams : unit.teamSets?.find((ts: any) => ts.id === match.team_set_id)?.teams;
+    const setIdToPass = isBase ? 'base' : match.team_set_id;
+
     return (
       <div className={`rounded-xl border bg-white p-4 shadow-sm transition-all ${match.completed ? 'border-emerald-300 bg-emerald-50/20' : 'border-indigo-300 ring-2 ring-indigo-50'}`}>
         <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-slate-100 pb-3 text-xs text-slate-500">
@@ -220,12 +223,12 @@ function MatchCard({ match, unit, isAdmin, onUpdateScore, onAwardTeamWin, onTogg
           {match.completed && <span className="ml-auto rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">Finished</span>}
         </div>
         <div className="space-y-2 mt-3">
-          {teamSet?.teams.map((team: any) => (
+          {displayTeams?.map((team: any) => (
             <div key={team.id} className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded-lg shadow-sm">
               <span className="font-bold text-slate-800 text-sm">{team.name}</span>
               {isAdmin && !match.completed && (
                 <button 
-                  onClick={() => onAwardTeamWin(team.id, teamSet.id)}
+                  onClick={() => onAwardTeamWin(team.id, setIdToPass)}
                   className="flex items-center gap-1 bg-amber-100 text-amber-700 hover:bg-amber-200 hover:scale-105 transition-all px-3 py-1.5 rounded-md text-xs font-black shadow-sm"
                 >
                   <Plus className="w-3.5 h-3.5" /> 1 Win
@@ -233,7 +236,7 @@ function MatchCard({ match, unit, isAdmin, onUpdateScore, onAwardTeamWin, onTogg
               )}
             </div>
           ))}
-          {!teamSet && <div className="text-slate-400 text-sm italic text-center py-2">Team Set no longer exists.</div>}
+          {!displayTeams && <div className="text-slate-400 text-sm italic text-center py-2">Teams not found.</div>}
         </div>
         {isAdmin && (
           <div className="mt-5 pt-3 border-t border-slate-100 text-center">
@@ -248,7 +251,6 @@ function MatchCard({ match, unit, isAdmin, onUpdateScore, onAwardTeamWin, onTogg
       </div>
     );
   }
-
   return (
     <div className={`rounded-xl border bg-white p-4 shadow-sm ${match.completed ? 'border-emerald-300 bg-emerald-50/20' : match.match_type === 'bracket' ? 'border-amber-300 ring-2 ring-amber-50' : 'border-slate-200'}`}>
       <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-slate-100 pb-3 text-xs text-slate-500">

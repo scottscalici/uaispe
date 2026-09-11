@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Plus, Trash2, BookOpen, CalendarPlus, Save, Swords, Users, Trophy } from 'lucide-react';
+import { Plus, Trash2, BookOpen, CalendarPlus, Save, Swords, Users, Trophy, Pencil, X } from 'lucide-react';
 import type { SyllabusData, ScheduleData, Match, CalendarDay, MatchType, TeamSet } from '../types';
 
 interface Props {
@@ -11,6 +11,7 @@ interface Props {
   onUpdateUnitName: (name: string) => void;
   onUpdateSyllabus: (s: SyllabusData) => void;
   onAddMatch: (m: Omit<Match, 'id'>) => void;
+  onUpdateMatch: (id: number, m: Partial<Match>) => void;
   onDeleteMatch: (id: number) => void;
 }
 
@@ -39,6 +40,7 @@ export default function UnitScheduleBuilder({
   onUpdateUnitName,
   onUpdateSyllabus,
   onAddMatch,
+  onUpdateMatch,
   onDeleteMatch,
 }: Props) {
   const [tab, setTab] = useState<'unit' | 'schedule'>('unit');
@@ -74,7 +76,7 @@ export default function UnitScheduleBuilder({
           onSave={onUpdateSyllabus} 
         />
       ) : (
-        <ScheduleEditor schedule={schedule} teamNames={teamNames} teamSets={teamSets} onAddMatch={onAddMatch} onDeleteMatch={onDeleteMatch} />
+        <ScheduleEditor schedule={schedule} teamNames={teamNames} teamSets={teamSets} onAddMatch={onAddMatch} onUpdateMatch={onUpdateMatch} onDeleteMatch={onDeleteMatch} />
       )}
     </div>
   );
@@ -253,18 +255,21 @@ function ScheduleEditor({
   teamNames,
   teamSets,
   onAddMatch,
+  onUpdateMatch,
   onDeleteMatch,
 }: {
   schedule: ScheduleData;
   teamNames: string[];
   teamSets: TeamSet[];
   onAddMatch: (m: Omit<Match, 'id'>) => void;
+  onUpdateMatch: (id: number, m: Partial<Match>) => void;
   onDeleteMatch: (id: number) => void;
 }) {
+  const [editingMatchId, setEditingMatchId] = useState<number | null>(null);
+
   const [matchType, setMatchType] = useState<MatchType>('standard');
   const [standardTeamSetId, setStandardTeamSetId] = useState<string>('base');
   
-  // NEW: Calculate sorted matches by Date & Time
   const sortedMatches = useMemo(() => {
     return [...schedule.matches].sort((a, b) => {
       if (a.date_str !== b.date_str) return a.date_str.localeCompare(b.date_str);
@@ -282,8 +287,7 @@ function ScheduleEditor({
 
   const [home, setHome] = useState('');
   const [away, setAway] = useState('');
-  const [teamSetId, setTeamSetId] = useState(teamSets[0]?.id ?? '');
-  
+  const [teamSetId, setTeamSetId] = useState('base'); 
   const [roundName, setRoundName] = useState('Quarterfinals'); 
 
   const [date, setDate] = useState('');
@@ -294,53 +298,65 @@ function ScheduleEditor({
     return myCalendar.filter(d => d.status === 'school');
   }, []);
 
-  const handleAdd = () => {
+  const handleEditClick = (m: Match) => {
+    setEditingMatchId(m.id);
+    setMatchType(m.match_type || 'standard');
+    setDate(m.date_str);
+    setTime(m.time);
+    setLocation(m.location);
+    if (m.match_type === 'standard') {
+      setStandardTeamSetId(m.team_set_id || 'base');
+      setHome(m.home_team);
+      setAway(m.away_team);
+    } else if (m.match_type === 'minigame') {
+      setTeamSetId(m.team_set_id || 'base');
+   } else if (m.match_type === 'bracket') {
+      setStandardTeamSetId(m.team_set_id || 'base');
+      setHome(m.home_team);
+      setAway(m.away_team);
+      setRoundName(m.round_name || '');
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingMatchId(null);
+    setDate('');
+    setHome('');
+    setAway('');
+  };
+
+  const handleSave = () => {
     if (!date) return;
     
+    let matchData: any = {
+      match_type: matchType,
+      date_str: date,
+      time,
+      location,
+    };
+
     if (matchType === 'standard') {
       if (!home || !away) return;
-      onAddMatch({
-        match_type: 'standard',
-        team_set_id: standardTeamSetId, 
-        home_team: home,
-        away_team: away,
-        home_score: null,
-        away_score: null,
-        date_str: date,
-        time,
-        location,
-        completed: false,
-      });
+      matchData = { ...matchData, team_set_id: standardTeamSetId, home_team: home, away_team: away };
     } else if (matchType === 'minigame') {
       if (!teamSetId) return;
       const selectedSet = teamSets.find(ts => ts.id === teamSetId);
-      onAddMatch({
-        match_type: 'minigame',
-        team_set_id: teamSetId,
-        home_team: 'Mini-Games',
-        away_team: selectedSet ? selectedSet.name : 'Multiple Teams',
-        home_score: null,
-        away_score: null,
-        date_str: date,
-        time,
-        location,
-        completed: false,
-      });
-    } else if (matchType === 'bracket') {
+      matchData = { 
+        ...matchData, 
+        team_set_id: teamSetId, 
+        home_team: 'Mini-Games', 
+        away_team: selectedSet ? selectedSet.name : (teamSetId === 'base' ? 'Default Unit Teams' : 'Multiple Teams') 
+      };
+     } else if (matchType === 'bracket') {
       if (!home || !away || !roundName) return;
-      onAddMatch({
-        match_type: 'bracket',
-        team_set_id: standardTeamSetId, 
-        home_team: home,
-        away_team: away,
-        home_score: null,
-        away_score: null,
-        date_str: date,
-        time,
-        location,
-        completed: false,
-        round_name: roundName,
-      });
+      matchData = { ...matchData, team_set_id: standardTeamSetId, home_team: home, away_team: away, round_name: roundName };
+    }
+
+    if (editingMatchId) {
+      onUpdateMatch(editingMatchId, matchData);
+      setEditingMatchId(null);
+    } else {
+      onAddMatch({ ...matchData, home_score: null, away_score: null, completed: false });
     }
     setDate('');
   };
@@ -349,9 +365,11 @@ function ScheduleEditor({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className={`rounded-xl border-2 p-4 shadow-sm transition-all ${editingMatchId ? 'border-amber-400 bg-amber-50/30 ring-4 ring-amber-50' : 'border-slate-200 bg-white'}`}>
         <div className="mb-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
-          <h3 className="text-sm font-bold uppercase text-slate-500">Add Schedule Event</h3>
+          <h3 className={`text-sm font-bold uppercase ${editingMatchId ? 'text-amber-700 flex items-center gap-2' : 'text-slate-500'}`}>
+            {editingMatchId ? <><Pencil className="w-4 h-4"/> Updating Scheduled Event</> : 'Add Schedule Event'}
+          </h3>
           
           <div className="flex flex-wrap bg-slate-100 p-1 rounded-lg border border-slate-200">
             <button 
@@ -429,12 +447,9 @@ function ScheduleEditor({
             <label className="block sm:col-span-2">
               <span className="mb-1 block text-xs font-semibold uppercase text-indigo-500">Select Daily Team Set</span>
               <select value={teamSetId} onChange={(e) => setTeamSetId(e.target.value)} className="w-full rounded-md border border-indigo-300 px-3 py-2 text-sm bg-indigo-50 font-semibold text-indigo-900 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                <option value="" disabled>Choose a saved Team Set...</option>
+                <option value="base">🏆 Default Unit Teams</option>
                 {teamSets.map((ts) => <option key={ts.id} value={ts.id}>{ts.name} ({ts.teams.length} teams)</option>)}
               </select>
-              {teamSets.length === 0 && (
-                <span className="text-xs text-amber-600 mt-1 block">You need to create and save a Team Set in the Generator tab first!</span>
-              )}
             </label>
           )}
           
@@ -470,9 +485,15 @@ function ScheduleEditor({
             </select>
           </label>
 
-          <div className="flex items-end">
-            <button onClick={handleAdd} disabled={!isFormValid} className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
-              <Plus className="h-4 w-4" /> Add to Schedule
+          <div className="flex items-end gap-2">
+            {editingMatchId && (
+              <button onClick={handleCancelEdit} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-300 transition">
+                <X className="h-4 w-4" /> Cancel
+              </button>
+            )}
+            <button onClick={handleSave} disabled={!isFormValid} className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-sm font-bold text-white transition disabled:opacity-50 disabled:cursor-not-allowed ${editingMatchId ? 'bg-amber-600 hover:bg-amber-700 shadow-md' : 'bg-blue-600 hover:bg-blue-700'}`}>
+              {editingMatchId ? <Save className="h-4 w-4" /> : <Plus className="h-4 w-4" />} 
+              {editingMatchId ? 'Update Event' : 'Add to Schedule'}
             </button>
           </div>
         </div>
@@ -486,15 +507,15 @@ function ScheduleEditor({
               <th className="px-4 py-2 text-left">Time</th>
               <th className="px-4 py-2 text-left">Event Details</th>
               <th className="px-4 py-2 text-left">Location</th>
-              <th className="px-4 py-2 text-center">Actions</th>
+              <th className="px-4 py-2 text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {sortedMatches.map((m) => (
-              <tr key={m.id} className={`hover:bg-slate-50 ${m.match_type === 'minigame' ? 'bg-indigo-50/30' : m.match_type === 'bracket' ? 'bg-amber-50/30' : ''}`}>
-                <td className="px-4 py-2.5">{m.date_str}</td>
-                <td className="px-4 py-2.5">{m.time}</td>
-                <td className="px-4 py-2.5 font-medium text-slate-800">
+              <tr key={m.id} className={`transition hover:bg-slate-50 ${m.match_type === 'minigame' ? 'bg-indigo-50/30' : m.match_type === 'bracket' ? 'bg-amber-50/30' : ''}`}>
+                <td className="px-4 py-3">{m.date_str}</td>
+                <td className="px-4 py-3 font-semibold text-slate-600">{m.time}</td>
+                <td className="px-4 py-3 font-medium text-slate-800">
                   {m.match_type === 'minigame' ? (
                     <div className="flex items-center gap-1.5 text-indigo-700">
                       <Users className="w-4 h-4" />
@@ -502,22 +523,27 @@ function ScheduleEditor({
                     </div>
                   ) : m.match_type === 'bracket' ? (
                     <div className="flex flex-col">
-                      <span className="text-xs font-bold text-amber-600 uppercase tracking-wider">{m.round_name}</span>
+                      <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">{m.round_name}</span>
                       <span>{m.home_team} <span className="text-slate-400 text-xs mx-1">vs</span> {m.away_team}</span>
                     </div>
                   ) : (
                     <span>{m.home_team} <span className="text-slate-400 text-xs mx-1">vs</span> {m.away_team}</span>
                   )}
                 </td>
-                <td className="px-4 py-2.5 text-slate-500">{m.location}</td>
-                <td className="px-4 py-2.5 text-center">
-                  <button onClick={() => onDeleteMatch(m.id)} className="text-red-400 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
+                <td className="px-4 py-3 text-slate-500">{m.location}</td>
+                <td className="px-4 py-3 text-right whitespace-nowrap">
+                  <button onClick={() => handleEditClick(m)} className="text-blue-500 hover:text-blue-700 mr-4 transition" title="Edit Event Details">
+                    <Pencil className="h-4 w-4 inline" />
+                  </button>
+                  <button onClick={() => onDeleteMatch(m.id)} className="text-red-400 hover:text-red-600 transition" title="Delete Event">
+                    <Trash2 className="h-4 w-4 inline" />
+                  </button>
                 </td>
               </tr>
             ))}
             {sortedMatches.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-slate-400 font-medium">
+                <td colSpan={6} className="px-4 py-8 text-center text-slate-400 font-medium">
                   No matches scheduled for this unit yet.
                 </td>
               </tr>

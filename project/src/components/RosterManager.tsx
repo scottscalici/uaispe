@@ -1,450 +1,249 @@
-import { useMemo, useState } from 'react';
-import { UserPlus, Pencil, Trash2, X, Grid3x3, Check, Upload, Plus, Minus } from 'lucide-react';
-import type { Unit, Player, Gender, Availability, FloorGrid } from '../types';
-import BulkImportModal from './BulkImportModal';
+import { useState } from 'react';
+import { UserPlus, Upload, Trash2, Edit2, Check, X, Users, Grid, Lock } from 'lucide-react';
+import type { Player, Unit, FloorGrid } from '../types';
+import LockerManager from './LockerManager';
 
 interface Props {
   roster: Player[];
   unit: Unit;
   floorGrid: FloorGrid;
   classId: string;
-  onAddPlayer: (player: Omit<Player, 'id'>) => void;
+  onAddPlayer: (p: Omit<Player, 'id'>) => void;
   onBulkAddPlayers: (players: Omit<Player, 'id'>[]) => void;
   onUpdatePlayer: (id: string, updates: Partial<Player>) => void;
   onDeletePlayer: (id: string) => void;
   onUpdateFloorGrid: (grid: FloorGrid) => void;
 }
 
-const GRID_COLS = 7;
-
-const availabilityConfig: { value: Availability; label: string; color: string }[] = [
-  { value: 'active', label: 'Active', color: 'bg-emerald-100 text-emerald-700' },
-  { value: 'injured', label: 'Injured', color: 'bg-amber-100 text-amber-700' },
-  { value: 'out', label: 'Out', color: 'bg-red-100 text-red-700' },
-];
-
-export default function RosterManager({
-  roster,
-  unit,
-  floorGrid,
-  classId,
-  onAddPlayer,
-  onBulkAddPlayers,
-  onUpdatePlayer,
-  onDeletePlayer,
-  onUpdateFloorGrid,
-}: Props) {
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [showAdd, setShowAdd] = useState(false);
-  const [showBulk, setShowBulk] = useState(false);
-  const [tab, setTab] = useState<'roster' | 'floor'>('roster');
-
-  const allPlayers = useMemo(() => {
-    return roster.map(player => {
-      const team = unit.baseTeams.find(t => t.players.some(p => p.id === player.id));
-      return { player, teamName: team ? team.name : 'Unassigned' };
-    }).sort((a, b) => a.player.name.localeCompare(b.player.name));
-  }, [roster, unit]);
+export default function RosterManager({ roster, floorGrid, onAddPlayer, onUpdatePlayer, onDeletePlayer, onUpdateFloorGrid }: Props) {
+  const [view, setView] = useState<'roster' | 'grid' | 'locks'>('roster');
+  const [newPlayerName, setNewPlayerName] = useState('');
+  const [newPlayerGender, setNewPlayerGender] = useState('M');
+  const [newPlayerSkill, setNewPlayerSkill] = useState(5);
   
-  const gridRows = useMemo(() => {
-    const maxRow = Math.max(
-      ...Object.values(floorGrid).map((s) => s.row),
-      Math.ceil(allPlayers.length / GRID_COLS),
-      3,
-    );
-    return Array.from({ length: maxRow }, (_, i) => i);
-  }, [floorGrid, allPlayers.length]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
 
-  const gridCols = Array.from({ length: GRID_COLS }, (_, i) => i);
+  const ROWS = 6;
+  const COLS = 7;
 
-  const spotKey = (row: number, col: number) => `${row}-${col}`;
-
-  const handleSpotClick = (row: number, col: number) => {
-    const key = spotKey(row, col);
-    const spot = floorGrid[key];
-    const next = { ...floorGrid };
-
-    if (spot?.blocked) {
-      delete next[key];
-    } else if (spot?.playerId) {
-      delete next[key];
-    } else {
-      next[key] = { row, col, blocked: true };
-    }
-    onUpdateFloorGrid(next);
-  };
-
-  const handleAssignPlayer = (row: number, col: number, playerId: string) => {
-    const key = spotKey(row, col);
-    const next = { ...floorGrid };
-    Object.keys(next).forEach((k) => {
-      if (next[k].playerId === playerId) delete next[k];
+  const handleAdd = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPlayerName.trim()) return;
+    onAddPlayer({
+      name: newPlayerName.trim(),
+      gender: newPlayerGender,
+      skill: newPlayerSkill,
+      compete: 5
     });
-    if (playerId) {
-      next[key] = { row, col, playerId };
-    } else {
-      delete next[key];
-    }
-    onUpdateFloorGrid(next);
+    setNewPlayerName('');
   };
 
-  const getPlayerName = (id?: string) =>
-    id ? allPlayers.find((p) => p.player.id === id)?.player.name ?? '' : '';
+  const handleSaveEdit = (id: string) => {
+    if (editName.trim()) {
+      onUpdatePlayer(id, { name: editName.trim() });
+    }
+    setEditingId(null);
+  };
+
+  const handleGridClick = (r: number, c: number) => {
+    const key = `${r}-${c}`;
+    const spot = floorGrid[key] || { row: r, col: c };
+    if (spot.playerId) return; 
+    
+    const newGrid = { ...floorGrid, [key]: { ...spot, blocked: !spot.blocked } };
+    onUpdateFloorGrid(newGrid);
+  };
+
+  const handleAssignSpot = (r: number, c: number, pId: string) => {
+    const key = `${r}-${c}`;
+    const newGrid = { ...floorGrid };
+    
+    if (pId) {
+      Object.keys(newGrid).forEach(k => {
+        if (newGrid[k].playerId === pId) {
+          newGrid[k] = { ...newGrid[k], playerId: undefined };
+        }
+      });
+    }
+    
+    newGrid[key] = { row: r, col: c, playerId: pId || undefined, blocked: false };
+    onUpdateFloorGrid(newGrid);
+  };
+
+  const activeRoster = roster.filter(p => p.availability !== 'out');
+  const assignedIds = Object.values(floorGrid).map(s => s.playerId).filter(Boolean);
+  const unassignedPlayers = activeRoster.filter(p => !assignedIds.includes(p.id));
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-900">Roster & Floor Spot Manager</h2>
-          <p className="text-sm text-slate-500">{allPlayers.length} students enrolled</p>
+          <p className="text-sm text-slate-500">{activeRoster.length} active students</p>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setTab('roster')}
-            className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition ${tab === 'roster' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
+        <div className="flex bg-slate-200 p-1 rounded-lg">
+          <button 
+            onClick={() => setView('roster')}
+            className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-bold transition-all ${view === 'roster' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
           >
-            Roster
+            <Users className="w-4 h-4" /> Roster
           </button>
-          <button
-            onClick={() => setTab('floor')}
-            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${tab === 'floor' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'}`}
+          <button 
+            onClick={() => setView('grid')}
+            className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-bold transition-all ${view === 'grid' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
           >
-            <Grid3x3 className="h-4 w-4" /> Floor Grid
+            <Grid className="w-4 h-4" /> Floor Grid
+          </button>
+          <button 
+            onClick={() => setView('locks')}
+            className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-bold transition-all ${view === 'locks' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+          >
+            <Lock className="w-4 h-4" /> Locks
           </button>
         </div>
       </div>
 
-      {tab === 'roster' ? (
-        <>
-          <div className="flex justify-end gap-2">
-            <button
-              onClick={() => setShowBulk(true)}
-              className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
-            >
-              <Upload className="h-4 w-4" /> Bulk Import
-            </button>
-            <button
-              onClick={() => setShowAdd(true)}
-              className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
-            >
-              <UserPlus className="h-4 w-4" /> Add Student
-            </button>
+      {view === 'roster' ? (
+        <div className="grid gap-6 md:grid-cols-3">
+          <div className="md:col-span-1 space-y-4">
+            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+              <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
+                <UserPlus className="w-5 h-5 text-blue-600" /> Add Student
+              </h3>
+              <form onSubmit={handleAdd} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Name</label>
+                  <input value={newPlayerName} onChange={e => setNewPlayerName(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2 outline-none focus:border-blue-500" placeholder="e.g. John S." />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Gender</label>
+                    <select value={newPlayerGender} onChange={e => setNewPlayerGender(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2 outline-none focus:border-blue-500 bg-white">
+                      <option value="M">M</option>
+                      <option value="F">F</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Skill (1-10)</label>
+                    <input type="number" min="1" max="10" value={newPlayerSkill} onChange={e => setNewPlayerSkill(Number(e.target.value))} className="w-full border border-slate-300 rounded-lg p-2 outline-none focus:border-blue-500" />
+                  </div>
+                </div>
+                <button type="submit" disabled={!newPlayerName.trim()} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-lg transition disabled:opacity-50">
+                  Add to Roster
+                </button>
+              </form>
+            </div>
           </div>
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-100 text-xs uppercase text-slate-600 whitespace-nowrap">
+
+          <div className="md:col-span-2">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-xs">
                   <tr>
-                    <th className="px-4 py-3 text-left">Name</th>
-                    <th className="px-4 py-3 text-left">Team</th>
-                    <th className="px-4 py-3 text-center">Wins</th>
-                    <th className="px-4 py-3 text-center">Votes</th>
-                    <th className="px-4 py-3 text-center">Grade</th>
-                    <th className="px-4 py-3 text-center">Skill (1-10)</th>
-                    <th className="px-4 py-3 text-center">Compete (1-5)</th>
-                    <th className="px-4 py-3 text-center">Gender</th>
-                    <th className="px-4 py-3 text-center">Availability</th>
-                    <th className="px-4 py-3 text-center">Actions</th>
+                    <th className="px-4 py-3">Name</th>
+                    <th className="px-4 py-3 w-20">Gender</th>
+                    <th className="px-4 py-3 w-20">Skill</th>
+                    <th className="px-4 py-3 w-28">Status</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {allPlayers.map(({ player, teamName }) => (
-                    <tr key={player.id} className="hover:bg-slate-50">
-                      <td className="px-4 py-2.5 font-medium text-slate-800 whitespace-nowrap">{player.name}</td>
-                      <td className="px-4 py-2.5 text-slate-500 whitespace-nowrap">{teamName}</td>
-                      
-                      {/* Lifetime Wins Controls */}
-                      <td className="px-4 py-2.5 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <button 
-                            onClick={() => onUpdatePlayer(player.id, { lifetimeWins: Math.max(0, (player.lifetimeWins || 0) - 1) })}
-                            className="rounded bg-amber-50 p-0.5 text-amber-400 hover:bg-amber-200 hover:text-amber-700 transition"
-                            title="Remove 1 Win"
-                          >
-                            <Minus className="h-3 w-3" />
-                          </button>
-                          <span className="font-bold text-amber-600 w-5 text-center">{player.lifetimeWins || 0}</span>
-                          <button 
-                            onClick={() => onUpdatePlayer(player.id, { lifetimeWins: (player.lifetimeWins || 0) + 1 })}
-                            className="rounded bg-amber-100 p-0.5 text-amber-600 hover:bg-amber-200 transition"
-                            title="Add 1 Win"
-                          >
-                            <Plus className="h-3 w-3" />
-                          </button>
-                        </div>
+                  {roster.sort((a,b) => a.name.localeCompare(b.name)).map(p => (
+                    <tr key={p.id} className="hover:bg-slate-50">
+                      <td className="px-4 py-2 font-semibold text-slate-800">
+                        {editingId === p.id ? (
+                          <div className="flex items-center gap-2">
+                            <input autoFocus value={editName} onChange={e => setEditName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSaveEdit(p.id)} className="border border-blue-300 rounded px-2 py-1 outline-none text-sm w-full" />
+                            <button onClick={() => handleSaveEdit(p.id)} className="text-emerald-600 hover:bg-emerald-50 p-1 rounded"><Check className="w-4 h-4"/></button>
+                            <button onClick={() => setEditingId(null)} className="text-slate-400 hover:bg-slate-100 p-1 rounded"><X className="w-4 h-4"/></button>
+                          </div>
+                        ) : p.name}
                       </td>
-
-                      {/* Teammate Votes Controls */}
-                      <td className="px-4 py-2.5 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <button 
-                            onClick={() => onUpdatePlayer(player.id, { teammateVotes: Math.max(0, (player.teammateVotes || 0) - 1) })}
-                            className="rounded bg-rose-50 p-0.5 text-rose-400 hover:bg-rose-200 hover:text-rose-700 transition"
-                            title="Remove 1 Vote"
-                          >
-                            <Minus className="h-3 w-3" />
-                          </button>
-                          <span className="font-bold text-rose-600 w-5 text-center">{player.teammateVotes || 0}</span>
-                          <button 
-                            onClick={() => onUpdatePlayer(player.id, { teammateVotes: (player.teammateVotes || 0) + 1 })}
-                            className="rounded bg-rose-100 p-0.5 text-rose-600 hover:bg-rose-200 transition"
-                            title="Add 1 Vote"
-                          >
-                            <Plus className="h-3 w-3" />
-                          </button>
-                        </div>
-                      </td>
-
-                      <td className="px-4 py-2.5 text-center font-bold text-slate-600">{player.grade || '-'}</td>
-                      <td className="px-4 py-2.5 text-center">{player.skill}</td>
-                      <td className="px-4 py-2.5 text-center">{player.compete}</td>
-                      <td className="px-4 py-2.5 text-center">{player.gender}</td>
-                      <td className="px-4 py-2.5 text-center">
-                        <select
-                          value={player.availability ?? 'active'}
-                          onChange={(e) => onUpdatePlayer(player.id, { availability: e.target.value as Availability })}
-                          className={`rounded-full px-2 py-0.5 text-xs font-semibold border-0 outline-none ${availabilityConfig.find((a) => a.value === (player.availability ?? 'active'))?.color}`}
-                        >
-                          {availabilityConfig.map((a) => (
-                            <option key={a.value} value={a.value}>{a.label}</option>
-                          ))}
+                      <td className="px-4 py-2 text-slate-600">{p.gender}</td>
+                      <td className="px-4 py-2">
+                        <select value={p.skill} onChange={e => onUpdatePlayer(p.id, { skill: Number(e.target.value) })} className="bg-transparent border border-transparent hover:border-slate-300 rounded p-1 outline-none">
+                          {[1,2,3,4,5,6,7,8,9,10].map(n => <option key={n} value={n}>{n}</option>)}
                         </select>
                       </td>
-                      <td className="px-4 py-2.5">
-                        <div className="flex justify-center gap-1">
-                          <button
-                            onClick={() => setEditingId(editingId === player.id ? null : player.id)}
-                            className="rounded p-1.5 text-slate-500 hover:bg-slate-100"
-                            aria-label="Edit"
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => onDeletePlayer(player.id)}
-                            className="rounded p-1.5 text-red-500 hover:bg-red-50"
-                            aria-label="Delete"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
+                      <td className="px-4 py-2">
+                        <select 
+                          value={p.availability || 'active'} 
+                          onChange={e => onUpdatePlayer(p.id, { availability: e.target.value as any })}
+                          className={`text-xs font-bold rounded p-1 outline-none cursor-pointer ${p.availability === 'out' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}
+                        >
+                          <option value="active">Active</option>
+                          <option value="out">Dropped/Out</option>
+                        </select>
+                      </td>
+                      <td className="px-4 py-2 text-right">
+                        <button onClick={() => { setEditingId(p.id); setEditName(p.name); }} className="text-blue-500 hover:bg-blue-50 p-1.5 rounded mr-1"><Edit2 className="w-4 h-4"/></button>
+                        <button onClick={() => { if(confirm(`Remove ${p.name}?`)) onDeletePlayer(p.id); }} className="text-red-400 hover:bg-red-50 p-1.5 rounded"><Trash2 className="w-4 h-4"/></button>
                       </td>
                     </tr>
                   ))}
+                  {roster.length === 0 && (
+                    <tr><td colSpan={5} className="text-center py-8 text-slate-400 font-medium">No students in roster.</td></tr>
+                  )}
                 </tbody>
               </table>
             </div>
           </div>
-
-          {editingId && (
-            <EditPlayerModal
-              player={allPlayers.find((p) => p.player.id === editingId)!.player}
-              onClose={() => setEditingId(null)}
-              onSave={(updates) => {
-                onUpdatePlayer(editingId, updates);
-                setEditingId(null);
-              }}
-            />
-          )}
-          {showAdd && (
-            <EditPlayerModal
-              onClose={() => setShowAdd(false)}
-              onSave={(p) => {
-                onAddPlayer(p as Omit<Player, 'id'>);
-                setShowAdd(false);
-              }}
-            />
-          )}
-          {showBulk && (
-            <BulkImportModal
-              classId={classId}
-              onClose={() => setShowBulk(false)}
-              onImport={onBulkAddPlayers}
-            />
-          )}
-        </>
-      ) : (
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="mb-3 text-sm text-slate-500">
-            Click an empty cell to mark it as unusable (X). Click a blocked cell to clear it. Use the dropdown to assign a student.
+        </div>
+      ) : view === 'grid' ? (
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+          <p className="text-sm text-slate-500 mb-6 font-medium">
+            Click the background of an empty cell to mark it as unusable (<span className="text-red-500 font-bold">X</span>). Use the dropdowns to assign a student to a spot.
           </p>
+          
           <div className="overflow-x-auto">
-            <div className="inline-block">
-              {gridRows.map((row) => (
-                <div key={row} className="flex gap-1">
-                  {gridCols.map((col) => {
-                    const key = spotKey(row, col);
-                    const spot = floorGrid[key];
-                    return (
-                      <div
-                        key={key}
-                        className={`m-0.5 flex h-20 w-24 flex-col items-center justify-center rounded-lg border-2 text-xs ${
-                          spot?.blocked
-                            ? 'border-red-300 bg-red-100'
-                            : spot?.playerId
-                              ? 'border-blue-300 bg-blue-50'
-                              : 'border-slate-200 bg-slate-50'
-                        }`}
-                      >
-                        {spot?.blocked ? (
-                          <button
-                            onClick={() => handleSpotClick(row, col)}
-                            className="flex h-full w-full items-center justify-center text-2xl font-bold text-red-500"
-                          >
-                            X
-                          </button>
-                        ) : spot?.playerId ? (
-                          <div className="flex w-full flex-col items-center gap-0.5 px-1">
-                            <span className="truncate text-xs font-semibold text-blue-700">{getPlayerName(spot.playerId)}</span>
-                            <button
-                              onClick={() => handleSpotClick(row, col)}
-                              className="text-[10px] text-slate-400 hover:text-red-500"
-                            >
-                              remove
-                            </button>
-                          </div>
-                        ) : (
-                          <select
-                            value=""
-                            onChange={(e) => e.target.value && handleAssignPlayer(row, col, e.target.value)}
-                            className="h-full w-full cursor-pointer rounded-lg border-0 bg-transparent text-center text-xs text-slate-400 hover:bg-slate-100"
-                          >
-                            <option value="">+ assign</option>
-                            {allPlayers
-                              .filter((p) => !p.player.availability || p.player.availability === 'active')
-                              .map((p) => (
-                                <option key={p.player.id} value={p.player.id}>
-                                  {p.player.name}
-                                </option>
-                              ))}
-                          </select>
-                        )}
+            <div className="min-w-[800px] grid gap-2 bg-slate-100 p-4 rounded-xl" style={{ gridTemplateColumns: `repeat(${COLS}, minmax(0, 1fr))` }}>
+              {Array.from({ length: ROWS }).map((_, r) => (
+                Array.from({ length: COLS }).map((_, c) => {
+                  const key = `${r}-${c}`;
+                  const spot = floorGrid[key] || { row: r, col: c };
+                  const player = activeRoster.find(p => p.id === spot.playerId);
+
+                  return (
+                    <div 
+                      key={key} 
+                      onClick={(e) => {
+                        if ((e.target as HTMLElement).tagName !== 'SELECT') handleGridClick(r, c);
+                      }}
+                      className={`relative flex flex-col items-center justify-center h-24 rounded-lg border-2 p-2 transition-all cursor-pointer ${
+                        spot.blocked ? 'bg-red-50 border-red-200' : 
+                        player ? 'bg-blue-50 border-blue-300 shadow-sm' : 'bg-white border-dashed border-slate-300 hover:border-slate-400'
+                      }`}
+                    >
+                      {spot.blocked ? (
+                        <X className="w-8 h-8 text-red-400 opacity-50" />
+                      ) : (
+                        <select 
+                          value={spot.playerId || ''} 
+                          onChange={(e) => handleAssignSpot(r, c, e.target.value)}
+                          className="w-full text-xs font-bold text-slate-700 bg-transparent border-b border-transparent hover:border-slate-300 outline-none truncate cursor-pointer text-center"
+                        >
+                          <option value="">-- Empty --</option>
+                          {player && <option value={player.id}>{player.name}</option>}
+                          {unassignedPlayers.map(p => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
+                        </select>
+                      )}
+                      
+                      <div className="absolute bottom-1 right-2 text-[9px] font-bold text-slate-300 pointer-events-none">
+                        R{r+1} C{c+1}
                       </div>
-                    );
-                  })}
-                </div>
+                    </div>
+                  );
+                })
               ))}
             </div>
           </div>
         </div>
-      )}
+      ) : view === 'locks' ? (
+        <LockerManager /> 
+      ) : null}
     </div>
-  );
-}
-
-function EditPlayerModal({
-  player,
-  onClose,
-  onSave,
-}: {
-  player?: Player;
-  onClose: () => void;
-  onSave: (data: Partial<Player> | Omit<Player, 'id'>) => void;
-}) {
-  const [name, setName] = useState(player?.name ?? '');
-  const [grade, setGrade] = useState(player?.grade ?? '');
-  const [skill, setSkill] = useState(player?.skill ?? 5);
-  const [compete, setCompete] = useState(player?.compete ?? 3);
-  const [gender, setGender] = useState<Gender>(player?.gender ?? 'M');
-  const [availability, setAvailability] = useState<Availability>(player?.availability ?? 'active');
-  const [lifetimeWins, setLifetimeWins] = useState(player?.lifetimeWins ?? 0);
-  const [teammateVotes, setTeammateVotes] = useState(player?.teammateVotes ?? 0);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-      <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-bold text-slate-900">{player ? 'Edit Student' : 'Add Student'}</h3>
-          <button onClick={onClose} className="rounded p-1 hover:bg-slate-100" aria-label="Close">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-        <div className="space-y-3">
-          <Field label="Name">
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-            />
-          </Field>
-          
-          <Field label="Grade (e.g. Junior, 11th)">
-            <input
-              value={grade}
-              onChange={(e) => setGrade(e.target.value)}
-              placeholder="Optional"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-            />
-          </Field>
-
-          <div className="grid grid-cols-2 gap-3">
-            <Field label={`Skill: ${skill}`}>
-              <input type="range" min={1} max={10} value={skill} onChange={(e) => setSkill(parseInt(e.target.value))} className="w-full" />
-            </Field>
-            <Field label={`Compete: ${compete}`}>
-              <input type="range" min={1} max={5} value={compete} onChange={(e) => setCompete(parseInt(e.target.value))} className="w-full" />
-            </Field>
-          </div>
-          
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Gender">
-              <select value={gender} onChange={(e) => setGender(e.target.value as Gender)} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-                <option value="M">M</option>
-                <option value="F">F</option>
-              </select>
-            </Field>
-            <Field label="Availability">
-              <select value={availability} onChange={(e) => setAvailability(e.target.value as Availability)} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-                {availabilityConfig.map((a) => (
-                  <option key={a.value} value={a.value}>{a.label}</option>
-                ))}
-              </select>
-            </Field>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3 border-t border-slate-100 pt-3 mt-3">
-            <Field label="Lifetime Wins">
-              <input
-                type="number"
-                min={0}
-                value={lifetimeWins}
-                onChange={(e) => setLifetimeWins(parseInt(e.target.value) || 0)}
-                className="w-full rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-900 focus:border-amber-500 focus:outline-none"
-              />
-            </Field>
-            <Field label="Teammate Votes">
-              <input
-                type="number"
-                min={0}
-                value={teammateVotes}
-                onChange={(e) => setTeammateVotes(parseInt(e.target.value) || 0)}
-                className="w-full rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-900 focus:border-rose-500 focus:outline-none"
-              />
-            </Field>
-          </div>
-
-        </div>
-        <div className="mt-5 flex gap-2">
-          <button onClick={onClose} className="flex-1 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100">
-            Cancel
-          </button>
-          <button
-            onClick={() => onSave({ name, grade, skill, compete, gender, availability, lifetimeWins, teammateVotes })}
-            disabled={!name.trim()}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-          >
-            <Check className="h-4 w-4" /> Save
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">{label}</span>
-      {children}
-    </label>
   );
 }
