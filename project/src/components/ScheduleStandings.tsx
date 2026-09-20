@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { CalendarDays, Clock, MapPin, BarChart3, History, Users, Plus, Trophy } from 'lucide-react';
+import { CalendarDays, Clock, MapPin, BarChart3, History, Users, Plus, Trophy, Lock } from 'lucide-react';
 import type { ScheduleData, Match, Unit } from '../types';
 import { computeStandings, rankStandings } from '../standings';
 
@@ -8,7 +8,7 @@ interface Props {
   schedule: ScheduleData;
   isAdmin: boolean;
   onUpdateScore: (matchId: number, side: 'home' | 'away', value: number | null) => void;
-  onAwardTeamWin: (teamId: number, teamSetId: string) => void;
+  onAwardTeamWin: (teamId: number, teamSetId: string, dateStr?: string) => void;
   onToggleMatchComplete: (matchId: number) => void;
 }
 
@@ -75,12 +75,12 @@ export default function ScheduleStandings({ unit, schedule, isAdmin, onUpdateSco
         <h3 className="mb-3 text-lg font-semibold text-slate-800">Active Matches & Events</h3>
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {activeMatches.map((m) => (
-            <MatchCard 
-              key={m.id} 
-              match={m} 
-              unit={unit} 
-              isAdmin={isAdmin} 
-              onUpdateScore={onUpdateScore} 
+            <MatchCard
+              key={m.id}
+              match={m}
+              unit={unit}
+              isAdmin={isAdmin}
+              onUpdateScore={onUpdateScore}
               onAwardTeamWin={onAwardTeamWin}
               onToggleMatchComplete={onToggleMatchComplete}
             />
@@ -96,19 +96,20 @@ export default function ScheduleStandings({ unit, schedule, isAdmin, onUpdateSco
       {archivedMatches.length > 0 && (
         <div className="mt-8 pt-6 border-t border-slate-200">
           <div className="mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-500">
-            <History className="h-4 w-4" />
-            Archived Past Events
+            <Lock className="h-4 w-4" />
+            Archived Past Events (Locked)
           </div>
           <div className="grid grid-cols-1 gap-4 opacity-75 transition-opacity hover:opacity-100 lg:grid-cols-2">
             {archivedMatches.map((m) => (
-              <MatchCard 
-                key={m.id} 
-                match={m} 
-                unit={unit} 
-                isAdmin={isAdmin} 
-                onUpdateScore={onUpdateScore} 
+              <MatchCard
+                key={m.id}
+                match={m}
+                unit={unit}
+                isAdmin={isAdmin}
+                onUpdateScore={onUpdateScore}
                 onAwardTeamWin={onAwardTeamWin}
                 onToggleMatchComplete={onToggleMatchComplete}
+                locked
               />
             ))}
           </div>
@@ -202,9 +203,10 @@ function StandingsTable({ ranked, getLogoUrl }: { ranked: ReturnType<typeof rank
   );
 }
 
-function MatchCard({ match, unit, isAdmin, onUpdateScore, onAwardTeamWin, onToggleMatchComplete }: any) {
+function MatchCard({ match, unit, isAdmin, onUpdateScore, onAwardTeamWin, onToggleMatchComplete, locked }: any) {
   const homeVal = match.home_score ?? '';
   const awayVal = match.away_score ?? '';
+  const editable = isAdmin && !locked;
 
   if (match.match_type === 'minigame') {
     const isBase = !match.team_set_id || match.team_set_id === 'base';
@@ -220,15 +222,19 @@ function MatchCard({ match, unit, isAdmin, onUpdateScore, onAwardTeamWin, onTogg
           <span className="flex items-center gap-1 font-semibold text-slate-600"><CalendarDays className="h-3.5 w-3.5" /> {match.date_str}</span>
           <span className="flex items-center gap-1 font-semibold text-slate-600"><Clock className="h-3.5 w-3.5" /> {match.time}</span>
           <span className="flex items-center gap-1 font-semibold text-slate-600"><MapPin className="h-3.5 w-3.5" /> {match.location}</span>
-          {match.completed && <span className="ml-auto rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">Finished</span>}
+          {locked ? (
+            <span className="ml-auto flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-500"><Lock className="h-3 w-3" /> Locked</span>
+          ) : match.completed && (
+            <span className="ml-auto rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">Finished</span>
+          )}
         </div>
         <div className="space-y-2 mt-3">
           {displayTeams?.map((team: any) => (
             <div key={team.id} className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded-lg shadow-sm">
               <span className="font-bold text-slate-800 text-sm">{team.name}</span>
-              {isAdmin && !match.completed && (
-                <button 
-                  onClick={() => onAwardTeamWin(team.id, setIdToPass)}
+              {editable && !match.completed && (
+                <button
+                  onClick={() => onAwardTeamWin(team.id, setIdToPass, match.date_str)}
                   className="flex items-center gap-1 bg-amber-100 text-amber-700 hover:bg-amber-200 hover:scale-105 transition-all px-3 py-1.5 rounded-md text-xs font-black shadow-sm"
                 >
                   <Plus className="w-3.5 h-3.5" /> 1 Win
@@ -238,9 +244,9 @@ function MatchCard({ match, unit, isAdmin, onUpdateScore, onAwardTeamWin, onTogg
           ))}
           {!displayTeams && <div className="text-slate-400 text-sm italic text-center py-2">Teams not found.</div>}
         </div>
-        {isAdmin && (
+        {editable && (
           <div className="mt-5 pt-3 border-t border-slate-100 text-center">
-            <button 
+            <button
               onClick={() => onToggleMatchComplete(match.id)}
               className={`text-xs font-bold px-5 py-2 rounded-lg transition-all ${match.completed ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-md'}`}
             >
@@ -262,15 +268,19 @@ function MatchCard({ match, unit, isAdmin, onUpdateScore, onAwardTeamWin, onTogg
         <span className="flex items-center gap-1 font-semibold text-slate-600"><CalendarDays className="h-3.5 w-3.5" /> {match.date_str}</span>
         <span className="flex items-center gap-1 font-semibold text-slate-600"><Clock className="h-3.5 w-3.5" /> {match.time}</span>
         <span className="flex items-center gap-1 font-semibold text-slate-600"><MapPin className="h-3.5 w-3.5" /> {match.location}</span>
-        {match.completed && <span className="ml-auto rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">Final</span>}
+        {locked ? (
+          <span className="ml-auto flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-500"><Lock className="h-3 w-3" /> Locked</span>
+        ) : match.completed && (
+          <span className="ml-auto rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">Final</span>
+        )}
       </div>
 
       <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 py-2">
         <div className={`text-right font-black text-sm md:text-base ${match.home_team === 'TBD' ? 'text-slate-400 italic' : 'text-slate-800'}`}>{match.home_team}</div>
         <div className="flex items-center gap-2">
-          <ScoreInput value={homeVal} disabled={!isAdmin} onChange={(v: any) => onUpdateScore(match.id, 'home', v)} />
+          <ScoreInput value={homeVal} disabled={!editable} onChange={(v: any) => onUpdateScore(match.id, 'home', v)} />
           <span className="text-xs font-bold text-slate-400">vs</span>
-          <ScoreInput value={awayVal} disabled={!isAdmin} onChange={(v: any) => onUpdateScore(match.id, 'away', v)} />
+          <ScoreInput value={awayVal} disabled={!editable} onChange={(v: any) => onUpdateScore(match.id, 'away', v)} />
         </div>
         <div className={`text-left font-black text-sm md:text-base ${match.away_team === 'TBD' ? 'text-slate-400 italic' : 'text-slate-800'}`}>{match.away_team}</div>
       </div>

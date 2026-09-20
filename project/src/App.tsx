@@ -297,9 +297,18 @@ export default function App() {
       if (ts) sourceTeams = ts.teams;
     }
     if (!sourceTeams.length) return c;
+
+    // Don't place students who are absent today or long-term injured/out onto today's teams.
+    const todaysAttendance = deriveAttendance(c.gradebook?.[dateStr] || {});
+    const cloned: Team[] = JSON.parse(JSON.stringify(sourceTeams));
+    const filteredTeams = cloned.map((t) => ({
+      ...t,
+      players: t.players.filter((p) => todaysAttendance[p.id] !== 'absent' && p.availability !== 'injured' && p.availability !== 'out'),
+    }));
+
     const snapshot: DailyTeamSnapshot = {
       baseTeamSetId: sourceId,
-      teams: JSON.parse(JSON.stringify(sourceTeams)) 
+      teams: filteredTeams
     };
     return { ...c, dailyTeams: { ...(c.dailyTeams || {}), [dateStr]: snapshot } };
   });
@@ -389,14 +398,20 @@ export default function App() {
     }
   }));
 
-  const handleAwardTeamWin = (teamId: number, teamSetId: string) => updateClass((c) => {
+  const handleAwardTeamWin = (teamId: number, teamSetId: string, dateStr?: string) => updateClass((c) => {
     const activeUnit = c.units.find(u => u.id === (c.activeUnitId || c.units[0]?.id));
     if (!activeUnit) return c;
-    const teamSet = activeUnit.unit.teamSets?.find(ts => ts.id === teamSetId);
-    if (!teamSet) return c;
-    const team = teamSet.teams.find(t => t.id === teamId);
+
+    // Prefer that day's actual Game Day Snapshot roster (subs included) over the master template,
+    // mirroring how handleUpdateScore already attributes standard-match wins.
+    const dailySnapshotTeams = dateStr ? c.dailyTeams?.[dateStr]?.teams : undefined;
+    const teamSet = teamSetId === 'base' ? undefined : activeUnit.unit.teamSets?.find(ts => ts.id === teamSetId);
+    const fallbackTeams = teamSetId === 'base' ? activeUnit.unit.baseTeams : teamSet?.teams;
+    const sourceTeams = dailySnapshotTeams || fallbackTeams;
+    if (!sourceTeams) return c;
+    const team = sourceTeams.find(t => t.id === teamId);
     if (!team) return c;
-    
+
     const playerIds = team.players.map(p => p.id);
     
     const nextRoster = c.roster.map(p => 
@@ -588,6 +603,7 @@ export default function App() {
               <NavButton active={adminView === 'teamcreator'} onClick={() => setAdminView('teamcreator')} icon={<Wand2 className="h-4 w-4" />}>Generator</NavButton>
               <NavButton active={adminView === 'calendar'} onClick={() => setAdminView('calendar')} icon={<CalendarDays className="h-4 w-4" />}>Calendar</NavButton>
               <NavButton active={adminView === 'planner'} onClick={() => setAdminView('planner')} icon={<ListTodo className="h-4 w-4" />}>Planner</NavButton>
+              <NavButton active={adminView === 'builder'} onClick={() => setAdminView('builder')} icon={<BookOpen className="h-4 w-4" />}>Builder</NavButton>
             </nav>
           ) : (
             <nav className="flex gap-2">
@@ -664,7 +680,7 @@ export default function App() {
               : adminView === 'teamcreator' ? <TeamCreator key={`tc-${unit.unit_id}`} roster={roster} unit={unit} onGenerate={handleGenerateTeams} onMovePlayer={handleMovePlayer} onDeleteTeamSet={handleDeleteTeamSet} />
               : adminView === 'calendar' ? <MasterCalendarBuilder key={`cal-${activeClassId}`} calendar={activeClass.masterCalendar || []} classId={activeClassId} onSave={(cal) => updateClass(c => ({ ...c, masterCalendar: cal }))} />
               : adminView === 'planner' ? <DailyPlanner key={`plan-${activeClassId}`} calendar={activeClass.masterCalendar || []} units={activeClass.units || []} onUpdateCalendarDay={(dateStr, updates) => updateClass(c => ({ ...c, masterCalendar: (c.masterCalendar || []).map(day => day.fecha === dateStr ? { ...day, ...updates } : day) }))} />
-              : <UnitScheduleBuilder key={`builder-${unit.unit_id}`} unitName={unit.unit_name} onUpdateUnitName={handleUpdateUnitName} syllabus={syllabus} schedule={schedule} teamNames={teamNames} teamSets={unit.teamSets} onUpdateSyllabus={handleUpdateSyllabus} onAddMatch={handleAddMatch} onUpdateMatch={handleUpdateMatch} onDeleteMatch={handleDeleteMatch} />}
+              : <UnitScheduleBuilder key={`builder-${unit.unit_id}`} unitName={unit.unit_name} onUpdateUnitName={handleUpdateUnitName} syllabus={syllabus} schedule={schedule} teamNames={teamNames} teamSets={unit.teamSets} calendar={activeClass.masterCalendar || []} onUpdateSyllabus={handleUpdateSyllabus} onAddMatch={handleAddMatch} onUpdateMatch={handleUpdateMatch} onDeleteMatch={handleDeleteMatch} />}
 
               {adminView === 'builder' && (
                 <div className="mt-16 border-t border-red-200 pt-8 pb-8">

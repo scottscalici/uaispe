@@ -8,6 +8,7 @@ interface Props {
   schedule: ScheduleData;
   teamNames: string[];
   teamSets?: TeamSet[];
+  calendar: CalendarDay[];
   onUpdateUnitName: (name: string) => void;
   onUpdateSyllabus: (s: SyllabusData) => void;
   onAddMatch: (m: Omit<Match, 'id'>) => void;
@@ -15,28 +16,13 @@ interface Props {
   onDeleteMatch: (id: number) => void;
 }
 
-const myCalendar: CalendarDay[] = [
-  { fecha: "2026-09-04", ciclo: null, dia: null, status: "no-school", note: "", manualOverride: false },
-  { fecha: "2026-09-07", ciclo: null, dia: null, status: "no-school", note: "", manualOverride: false },
-  { fecha: "2026-09-08", ciclo: null, dia: null, status: "no-class", note: "Full AMES Day", manualOverride: true },
-  { fecha: "2026-09-09", ciclo: "A", dia: 3, status: "school", note: "", manualOverride: true },
-  { fecha: "2026-09-10", ciclo: "B", dia: 3, status: "school", note: "", manualOverride: true },
-  { fecha: "2026-09-11", ciclo: "A", dia: 4, status: "school", note: "", manualOverride: false },
-  { fecha: "2026-09-14", ciclo: "B", dia: 4, status: "school", note: "", manualOverride: false },
-  { fecha: "2026-09-15", ciclo: "A", dia: 5, status: "school", note: "", manualOverride: false },
-  { fecha: "2026-09-16", ciclo: null, dia: null, status: "in-person-pd", note: "", manualOverride: false },
-  { fecha: "2026-09-17", ciclo: "B", dia: 5, status: "school", note: "", manualOverride: false },
-  { fecha: "2026-09-18", ciclo: "A", dia: 6, status: "school", note: "", manualOverride: false },
-  { fecha: "2026-09-21", ciclo: "B", dia: 6, status: "school", note: "", manualOverride: false },
-  { fecha: "2026-09-22", ciclo: "A", dia: 7, status: "school", note: "", manualOverride: false }
-];
-
 export default function UnitScheduleBuilder({
   unitName,
   syllabus,
   schedule,
   teamNames,
   teamSets = [],
+  calendar,
   onUpdateUnitName,
   onUpdateSyllabus,
   onAddMatch,
@@ -76,7 +62,7 @@ export default function UnitScheduleBuilder({
           onSave={onUpdateSyllabus} 
         />
       ) : (
-        <ScheduleEditor schedule={schedule} teamNames={teamNames} teamSets={teamSets} onAddMatch={onAddMatch} onUpdateMatch={onUpdateMatch} onDeleteMatch={onDeleteMatch} />
+        <ScheduleEditor schedule={schedule} teamNames={teamNames} teamSets={teamSets} calendar={calendar} onAddMatch={onAddMatch} onUpdateMatch={onUpdateMatch} onDeleteMatch={onDeleteMatch} />
       )}
     </div>
   );
@@ -254,6 +240,7 @@ function ScheduleEditor({
   schedule,
   teamNames,
   teamSets,
+  calendar,
   onAddMatch,
   onUpdateMatch,
   onDeleteMatch,
@@ -261,6 +248,7 @@ function ScheduleEditor({
   schedule: ScheduleData;
   teamNames: string[];
   teamSets: TeamSet[];
+  calendar: CalendarDay[];
   onAddMatch: (m: Omit<Match, 'id'>) => void;
   onUpdateMatch: (id: number, m: Partial<Match>) => void;
   onDeleteMatch: (id: number) => void;
@@ -295,8 +283,10 @@ function ScheduleEditor({
   const [location, setLocation] = useState('Main Gym');
 
   const upcomingSchoolDays = useMemo(() => {
-    return myCalendar.filter(d => d.status === 'school');
-  }, []);
+    return [...calendar]
+      .filter(d => d.status === 'school' || d.status === 'half-day')
+      .sort((a, b) => a.fecha.localeCompare(b.fecha));
+  }, [calendar]);
 
   const handleEditClick = (m: Match) => {
     setEditingMatchId(m.id);
