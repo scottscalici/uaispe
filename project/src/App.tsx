@@ -24,7 +24,7 @@ import WorkoutPlayer from './components/WorkoutPlayer';
 import MasterCalendarBuilder from './components/MasterCalendarBuilder';
 import DailyPlanner from './components/DailyPlanner';
 
-type AdminView = 'teams' | 'schedule' | 'attendance' | 'grades' | 'roster' | 'teamcreator' | 'calendar'| 'builder' | 'planner';
+type AdminView = 'teams' | 'schedule' | 'attendance' | 'grades' | 'roster' | 'teamcreator' | 'calendar'| 'builder' | 'planner' | 'leaderboards';
 type PublicView = 'syllabus' | 'dashboard' | 'leaderboards' | 'workout';
 
 const allPlayerIds = (c: ClassData): string[] => c.roster?.map((p) => p.id) || [];
@@ -42,8 +42,7 @@ const deriveAttendance = (logs: DailyLogMap): AttendanceMap => {
 
 let playerIdCounter = 1000;
 const genPlayerId = (classId: string) => `${classId}_IMP_${Date.now()}_${playerIdCounter++}`;
-let matchIdCounter = 1000;
-const genMatchId = () => matchIdCounter++;
+const genMatchId = () => Date.now() + Math.floor(Math.random() * 100000);
 
 export default function App() {
   const [route, setRoute] = useState<'student' | 'admin_login' | 'admin'>(
@@ -187,10 +186,23 @@ export default function App() {
               }
 
               units = units.map(u => {
-                if (u.unit.sport_type === 'custom') {
-                  return { ...u, unit: { ...u.unit, sport_type: `link_${u.unit.unit_name.toLowerCase().replace(/[^a-z0-9]/g, '')}` } };
+                let currentUnit = u;
+                if (currentUnit.unit.sport_type === 'custom') {
+                  currentUnit = { ...currentUnit, unit: { ...currentUnit.unit, sport_type: `link_${currentUnit.unit.unit_name.toLowerCase().replace(/[^a-z0-9]/g, '')}` } };
                 }
-                return u;
+                
+                // AUTO-HEAL: Scan for duplicate match IDs and assign new unique ones
+                const seenMatchIds = new Set();
+                const fixedMatches = (currentUnit.schedule?.matches || []).map(m => {
+                   let safeId = m.id;
+                   if (seenMatchIds.has(safeId) || !safeId) {
+                      safeId = Date.now() + Math.floor(Math.random() * 100000); 
+                   }
+                   seenMatchIds.add(safeId);
+                   return { ...m, id: safeId };
+                });
+
+                return { ...currentUnit, schedule: { ...currentUnit.schedule, matches: fixedMatches } };
               });
 
               let newGradebook = c.gradebook || {};
@@ -240,7 +252,17 @@ export default function App() {
   const handleBulkAddPlayers = (players: Omit<Player, 'id'>[]) => updateClass((c) => ({ ...c, roster: [...c.roster, ...players.map(p => ({ ...p, id: genPlayerId(c.id) }))] }));
   const handleUpdatePlayer = (id: string, updates: Partial<Player>) => updateClass((c) => ({ ...c, roster: c.roster.map(p => p.id === id ? { ...p, ...updates } : p), units: c.units.map(u => ({ ...u, unit: { ...u.unit, baseTeams: u.unit.baseTeams.map(t => ({ ...t, players: t.players.map(p => p.id === id ? { ...p, ...updates } : p) })) } })) }));
   const handleDeletePlayer = (id: string) => updateClass((c) => ({ ...c, roster: c.roster.filter(p => p.id !== id), units: c.units.map(u => ({ ...u, unit: { ...u.unit, baseTeams: u.unit.baseTeams.map(t => ({ ...t, players: t.players.filter(p => p.id !== id) })) } })) }));
+  const handleUpdatePlayerWins = (playerId: string, delta: number) => updateActiveUnit(u => {
+    const nextWins = { ...u.wins };
+    nextWins[playerId] = Math.max(0, (nextWins[playerId] || 0) + delta);
+    return { ...u, wins: nextWins };
+  });
 
+  const handleUpdateTeammatePoints = (playerId: string, delta: number) => updateActiveUnit(u => {
+    const nextPts = { ...u.teammatePoints };
+    nextPts[playerId] = Math.max(0, (nextPts[playerId] || 0) + delta);
+    return { ...u, teammatePoints: nextPts };
+  });
   const handleGenerateTeams = (teams: Team[], teamSetName?: string) => updateActiveUnit((u) => {
     if (teamSetName) {
       const existingSetIndex = u.unit.teamSets?.findIndex(ts => ts.name.toLowerCase() === teamSetName.toLowerCase());
@@ -586,8 +608,10 @@ export default function App() {
               <NavButton active={adminView === 'grades'} onClick={() => setAdminView('grades')} icon={<FileSpreadsheet className="h-4 w-4" />}>Grades</NavButton>
               <NavButton active={adminView === 'roster'} onClick={() => setAdminView('roster')} icon={<ClipboardList className="h-4 w-4" />}>Roster</NavButton>
               <NavButton active={adminView === 'teamcreator'} onClick={() => setAdminView('teamcreator')} icon={<Wand2 className="h-4 w-4" />}>Generator</NavButton>
+              <NavButton active={adminView === 'builder'} onClick={() => setAdminView('builder')} icon={<Grid3x3 className="h-4 w-4" />}>Builder</NavButton>
               <NavButton active={adminView === 'calendar'} onClick={() => setAdminView('calendar')} icon={<CalendarDays className="h-4 w-4" />}>Calendar</NavButton>
               <NavButton active={adminView === 'planner'} onClick={() => setAdminView('planner')} icon={<ListTodo className="h-4 w-4" />}>Planner</NavButton>
+              <NavButton active={adminView === 'leaderboards'} onClick={() => setAdminView('leaderboards')} icon={<Star className="h-4 w-4" />}>Leaderboards</NavButton>
             </nav>
           ) : (
             <nav className="flex gap-2">
@@ -664,6 +688,18 @@ export default function App() {
               : adminView === 'teamcreator' ? <TeamCreator key={`tc-${unit.unit_id}`} roster={roster} unit={unit} onGenerate={handleGenerateTeams} onMovePlayer={handleMovePlayer} onDeleteTeamSet={handleDeleteTeamSet} />
               : adminView === 'calendar' ? <MasterCalendarBuilder key={`cal-${activeClassId}`} calendar={activeClass.masterCalendar || []} classId={activeClassId} onSave={(cal) => updateClass(c => ({ ...c, masterCalendar: cal }))} />
               : adminView === 'planner' ? <DailyPlanner key={`plan-${activeClassId}`} calendar={activeClass.masterCalendar || []} units={activeClass.units || []} onUpdateCalendarDay={(dateStr, updates) => updateClass(c => ({ ...c, masterCalendar: (c.masterCalendar || []).map(day => day.fecha === dateStr ? { ...day, ...updates } : day) }))} />
+              : adminView === 'leaderboards' ? (
+                <Leaderboards 
+                  roster={roster} 
+                  unit={unit} 
+                  wins={wins} 
+                  teammatePoints={teammatePoints} 
+                  schedule={schedule}
+                  dailyTeams={activeClass.dailyTeams || {}}
+                  onUpdateWins={handleUpdatePlayerWins}
+                  onUpdateTeammatePoints={handleUpdateTeammatePoints}
+                />
+            )
               : <UnitScheduleBuilder key={`builder-${unit.unit_id}`} unitName={unit.unit_name} onUpdateUnitName={handleUpdateUnitName} syllabus={syllabus} schedule={schedule} teamNames={teamNames} teamSets={unit.teamSets} onUpdateSyllabus={handleUpdateSyllabus} onAddMatch={handleAddMatch} onUpdateMatch={handleUpdateMatch} onDeleteMatch={handleDeleteMatch} />}
 
               {adminView === 'builder' && (
