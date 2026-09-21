@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { CalendarDays, Clock, MapPin, BarChart3, History, Users, Plus, Trophy } from 'lucide-react';
+import { CalendarDays, Clock, MapPin, BarChart3, History, Users, Plus, Trophy, Lock, Printer } from 'lucide-react';
 import type { ScheduleData, Match, Unit } from '../types';
 import { computeStandings, rankStandings } from '../standings';
 
@@ -8,7 +8,7 @@ interface Props {
   schedule: ScheduleData;
   isAdmin: boolean;
   onUpdateScore: (matchId: number, side: 'home' | 'away', value: number | null) => void;
-  onAwardTeamWin: (teamId: number, teamSetId: string) => void;
+  onAwardTeamWin: (teamId: number, teamSetId: string, dateStr?: string) => void;
   onToggleMatchComplete: (matchId: number) => void;
 }
 
@@ -54,9 +54,94 @@ export default function ScheduleStandings({ unit, schedule, isAdmin, onUpdateSco
     return `https://raw.githubusercontent.com/scottscalici/PE/main/teams/${safeUnit}/${safeTeam}.png`;
   };
 
+  const matchesByDate = useMemo(() => {
+    const grouped: Record<string, Match[]> = {};
+    sortedAllMatches.forEach(m => {
+      if (!grouped[m.date_str]) grouped[m.date_str] = [];
+      grouped[m.date_str].push(m);
+    });
+    return grouped;
+  }, [sortedAllMatches]);
+
+  const handlePrintSchedule = () => window.print();
+
   return (
     <div className="space-y-8">
-      
+      <style>{`
+        @media print {
+          @page { size: portrait; margin: 12mm; }
+          body * { visibility: hidden; }
+          #printable-schedule, #printable-schedule * { visibility: visible; }
+          #printable-schedule { position: absolute; left: 0; top: 0; width: 100%; background: white !important; }
+          .sched-no-print { display: none !important; }
+          .sched-day { break-inside: avoid; page-break-inside: avoid; margin-bottom: 14px; }
+          .sched-date-header { background: #1e293b !important; color: #fff !important; font-weight: 900; padding: 6px 10px; border-radius: 6px; font-size: 11pt; margin-bottom: 6px; }
+          .sched-row { break-inside: avoid; page-break-inside: avoid; display: flex !important; align-items: center; justify-content: space-between; border: 1px solid #cbd5e1 !important; border-radius: 6px; padding: 8px 12px; margin-bottom: 6px; }
+          .sched-team { display: flex !important; align-items: center; gap: 8px; font-weight: 700; font-size: 11pt; color: #000 !important; flex: 1; }
+          .sched-team.away { justify-content: flex-end; text-align: right; }
+          .sched-logo { width: 22px !important; height: 22px !important; object-fit: contain; }
+          .sched-meta { font-size: 9pt; color: #334155 !important; white-space: nowrap; padding: 0 10px; text-align: center; }
+          .sched-vs { font-weight: 900; font-size: 10pt; color: #64748b !important; padding: 0 10px; }
+        }
+      `}</style>
+
+      <div className="flex justify-end sched-no-print">
+        <button onClick={handlePrintSchedule} className="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white shadow-sm hover:bg-blue-700 transition">
+          <Printer className="h-4 w-4" /> Print Schedule
+        </button>
+      </div>
+
+      {/* Print-only clean schedule list, covers the full season chronologically */}
+      <div id="printable-schedule" className="hidden print:block">
+        <h1 className="text-2xl font-black text-center mb-6">{unit.unit_name} — Season Schedule</h1>
+        {Object.keys(matchesByDate).sort().map(date => (
+          <div key={date} className="sched-day">
+            <div className="sched-date-header">{new Date(date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</div>
+            {matchesByDate[date].map(m => {
+              if (m.match_type === 'minigame') {
+                const isBase = !m.team_set_id || m.team_set_id === 'base';
+                const displayTeams = isBase ? unit.baseTeams : unit.teamSets?.find(ts => ts.id === m.team_set_id)?.teams;
+                return (
+                  <div key={m.id} className="sched-row">
+                    <div className="sched-meta" style={{ textAlign: 'left', flex: '0 0 auto' }}>{m.time} • {m.location}</div>
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', flex: 1, justifyContent: 'center' }}>
+                      {displayTeams?.map(t => (
+                        <span key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700, fontSize: '10pt' }}>
+                          <img src={getLogoUrl(t.name)} onError={e => e.currentTarget.style.display = 'none'} className="sched-logo" alt="" /> {t.name}
+                        </span>
+                      ))}
+                      {!displayTeams && <span>Mini-Games</span>}
+                    </div>
+                  </div>
+                );
+              }
+              return (
+                <div key={m.id} className="sched-row">
+                  <div className="sched-team">
+                    {m.home_team !== 'TBD' && <img src={getLogoUrl(m.home_team)} onError={e => e.currentTarget.style.display = 'none'} className="sched-logo" alt="" />}
+                    {m.home_team}
+                  </div>
+                  <div className="sched-meta">
+                    {m.match_type === 'bracket' && <div style={{ fontWeight: 800 }}>{m.round_name}</div>}
+                    {m.time} • {m.location}
+                    {m.completed && m.home_score !== null && m.away_score !== null && (
+                      <div style={{ fontWeight: 900 }}>{m.home_score} - {m.away_score}</div>
+                    )}
+                  </div>
+                  <div className="sched-team away">
+                    {m.away_team}
+                    {m.away_team !== 'TBD' && <img src={getLogoUrl(m.away_team)} onError={e => e.currentTarget.style.display = 'none'} className="sched-logo" alt="" />}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+        {Object.keys(matchesByDate).length === 0 && (
+          <p className="text-center text-slate-400">No events scheduled yet.</p>
+        )}
+      </div>
+
       {bracketMatches.length > 0 && (
         <div className="overflow-hidden rounded-xl border border-amber-200 bg-white shadow-sm">
           <div className="flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-3 text-amber-900">
@@ -75,12 +160,12 @@ export default function ScheduleStandings({ unit, schedule, isAdmin, onUpdateSco
         <h3 className="mb-3 text-lg font-semibold text-slate-800">Active Matches & Events</h3>
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {activeMatches.map((m) => (
-            <MatchCard 
-              key={m.id} 
-              match={m} 
-              unit={unit} 
-              isAdmin={isAdmin} 
-              onUpdateScore={onUpdateScore} 
+            <MatchCard
+              key={m.id}
+              match={m}
+              unit={unit}
+              isAdmin={isAdmin}
+              onUpdateScore={onUpdateScore}
               onAwardTeamWin={onAwardTeamWin}
               onToggleMatchComplete={onToggleMatchComplete}
             />
@@ -96,19 +181,20 @@ export default function ScheduleStandings({ unit, schedule, isAdmin, onUpdateSco
       {archivedMatches.length > 0 && (
         <div className="mt-8 pt-6 border-t border-slate-200">
           <div className="mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-500">
-            <History className="h-4 w-4" />
-            Archived Past Events
+            <Lock className="h-4 w-4" />
+            Archived Past Events (Locked)
           </div>
           <div className="grid grid-cols-1 gap-4 opacity-75 transition-opacity hover:opacity-100 lg:grid-cols-2">
             {archivedMatches.map((m) => (
-              <MatchCard 
-                key={m.id} 
-                match={m} 
-                unit={unit} 
-                isAdmin={isAdmin} 
-                onUpdateScore={onUpdateScore} 
+              <MatchCard
+                key={m.id}
+                match={m}
+                unit={unit}
+                isAdmin={isAdmin}
+                onUpdateScore={onUpdateScore}
                 onAwardTeamWin={onAwardTeamWin}
                 onToggleMatchComplete={onToggleMatchComplete}
+                locked
               />
             ))}
           </div>
@@ -202,9 +288,10 @@ function StandingsTable({ ranked, getLogoUrl }: { ranked: ReturnType<typeof rank
   );
 }
 
-function MatchCard({ match, unit, isAdmin, onUpdateScore, onAwardTeamWin, onToggleMatchComplete }: any) {
+function MatchCard({ match, unit, isAdmin, onUpdateScore, onAwardTeamWin, onToggleMatchComplete, locked }: any) {
   const homeVal = match.home_score ?? '';
   const awayVal = match.away_score ?? '';
+  const editable = isAdmin && !locked;
 
   if (match.match_type === 'minigame') {
     const isBase = !match.team_set_id || match.team_set_id === 'base';
@@ -220,15 +307,19 @@ function MatchCard({ match, unit, isAdmin, onUpdateScore, onAwardTeamWin, onTogg
           <span className="flex items-center gap-1 font-semibold text-slate-600"><CalendarDays className="h-3.5 w-3.5" /> {match.date_str}</span>
           <span className="flex items-center gap-1 font-semibold text-slate-600"><Clock className="h-3.5 w-3.5" /> {match.time}</span>
           <span className="flex items-center gap-1 font-semibold text-slate-600"><MapPin className="h-3.5 w-3.5" /> {match.location}</span>
-          {match.completed && <span className="ml-auto rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">Finished</span>}
+          {locked ? (
+            <span className="ml-auto flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-500"><Lock className="h-3 w-3" /> Locked</span>
+          ) : match.completed && (
+            <span className="ml-auto rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">Finished</span>
+          )}
         </div>
         <div className="space-y-2 mt-3">
           {displayTeams?.map((team: any) => (
             <div key={team.id} className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded-lg shadow-sm">
               <span className="font-bold text-slate-800 text-sm">{team.name}</span>
-              {isAdmin && !match.completed && (
-                <button 
-                  onClick={() => onAwardTeamWin(team.id, setIdToPass)}
+              {editable && !match.completed && (
+                <button
+                  onClick={() => onAwardTeamWin(team.id, setIdToPass, match.date_str)}
                   className="flex items-center gap-1 bg-amber-100 text-amber-700 hover:bg-amber-200 hover:scale-105 transition-all px-3 py-1.5 rounded-md text-xs font-black shadow-sm"
                 >
                   <Plus className="w-3.5 h-3.5" /> 1 Win
@@ -238,9 +329,9 @@ function MatchCard({ match, unit, isAdmin, onUpdateScore, onAwardTeamWin, onTogg
           ))}
           {!displayTeams && <div className="text-slate-400 text-sm italic text-center py-2">Teams not found.</div>}
         </div>
-        {isAdmin && (
+        {editable && (
           <div className="mt-5 pt-3 border-t border-slate-100 text-center">
-            <button 
+            <button
               onClick={() => onToggleMatchComplete(match.id)}
               className={`text-xs font-bold px-5 py-2 rounded-lg transition-all ${match.completed ? 'bg-slate-100 text-slate-600 hover:bg-slate-200' : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-md'}`}
             >
@@ -262,15 +353,19 @@ function MatchCard({ match, unit, isAdmin, onUpdateScore, onAwardTeamWin, onTogg
         <span className="flex items-center gap-1 font-semibold text-slate-600"><CalendarDays className="h-3.5 w-3.5" /> {match.date_str}</span>
         <span className="flex items-center gap-1 font-semibold text-slate-600"><Clock className="h-3.5 w-3.5" /> {match.time}</span>
         <span className="flex items-center gap-1 font-semibold text-slate-600"><MapPin className="h-3.5 w-3.5" /> {match.location}</span>
-        {match.completed && <span className="ml-auto rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">Final</span>}
+        {locked ? (
+          <span className="ml-auto flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-500"><Lock className="h-3 w-3" /> Locked</span>
+        ) : match.completed && (
+          <span className="ml-auto rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">Final</span>
+        )}
       </div>
 
       <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 py-2">
         <div className={`text-right font-black text-sm md:text-base ${match.home_team === 'TBD' ? 'text-slate-400 italic' : 'text-slate-800'}`}>{match.home_team}</div>
         <div className="flex items-center gap-2">
-          <ScoreInput value={homeVal} disabled={!isAdmin} onChange={(v: any) => onUpdateScore(match.id, 'home', v)} />
+          <ScoreInput value={homeVal} disabled={!editable} onChange={(v: any) => onUpdateScore(match.id, 'home', v)} />
           <span className="text-xs font-bold text-slate-400">vs</span>
-          <ScoreInput value={awayVal} disabled={!isAdmin} onChange={(v: any) => onUpdateScore(match.id, 'away', v)} />
+          <ScoreInput value={awayVal} disabled={!editable} onChange={(v: any) => onUpdateScore(match.id, 'away', v)} />
         </div>
         <div className={`text-left font-black text-sm md:text-base ${match.away_team === 'TBD' ? 'text-slate-400 italic' : 'text-slate-800'}`}>{match.away_team}</div>
       </div>

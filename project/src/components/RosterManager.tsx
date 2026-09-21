@@ -167,12 +167,13 @@ export default function RosterManager({ roster, floorGrid, onAddPlayer, onUpdate
                         </select>
                       </td>
                       <td className="px-4 py-2">
-                        <select 
-                          value={p.availability || 'active'} 
+                        <select
+                          value={p.availability || 'active'}
                           onChange={e => onUpdatePlayer(p.id, { availability: e.target.value as any })}
-                          className={`text-xs font-bold rounded p-1 outline-none cursor-pointer ${p.availability === 'out' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}
+                          className={`text-xs font-bold rounded p-1 outline-none cursor-pointer ${p.availability === 'out' ? 'bg-red-100 text-red-700' : p.availability === 'injured' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}
                         >
                           <option value="active">Active</option>
+                          <option value="injured">Injured</option>
                           <option value="out">Dropped/Out</option>
                         </select>
                       </td>

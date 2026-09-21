@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { CalendarDays, Clock, ListTodo, Target, Plus, Trash2, Link as LinkIcon } from 'lucide-react';
+import { CalendarDays, Clock, ListTodo, Target, Plus, Trash2, Link as LinkIcon, ArrowUp, ArrowDown, Printer, MapPin, Users } from 'lucide-react';
 import type { CalendarDay, UnitData, LessonPlanItem, LessonPlan } from '../types';
 
 interface Props {
@@ -65,11 +65,52 @@ export default function DailyPlanner({ calendar, units, onUpdateCalendarDay }: P
     updatePlan({ timeline: newTimeline });
   };
 
+  const moveTimelineItem = (index: number, direction: -1 | 1) => {
+    const target = index + direction;
+    if (target < 0 || target >= lessonPlan.timeline.length) return;
+    const newTimeline = [...lessonPlan.timeline];
+    [newTimeline[index], newTimeline[target]] = [newTimeline[target], newTimeline[index]];
+    updatePlan({ timeline: newTimeline });
+  };
+
+  const todaysMatches = useMemo(() => {
+    if (!activeDay || !activeUnit) return [];
+    return activeUnit.schedule.matches
+      .filter(m => m.date_str === activeDay.fecha)
+      .sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+  }, [activeDay, activeUnit]);
+
+  const getLogoUrl = (teamName: string) => {
+    if (!teamName || teamName === 'TBD' || !activeUnit) return '';
+    const normalize = (str: string) => str.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    const safeUnit = normalize(activeUnit.unit.unit_name || 'unknown');
+    const safeTeam = normalize(teamName);
+    return `https://raw.githubusercontent.com/scottscalici/PE/main/teams/${safeUnit}/${safeTeam}.png`;
+  };
+
+  const handlePrint = () => window.print();
+
   if (!activeDay) return null;
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+      <style>{`
+        @media print {
+          @page { size: portrait; margin: 12mm; }
+          body * { visibility: hidden; }
+          #printable-plan, #printable-plan * { visibility: visible; }
+          #printable-plan { position: absolute; left: 0; top: 0; width: 100%; background: white !important; }
+          .plan-no-print { display: none !important; }
+          .plan-block { break-inside: avoid; page-break-inside: avoid; display: flex; gap: 12px; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; margin-bottom: 8px; }
+          .plan-time { flex: 0 0 64px; font-weight: 900; font-size: 11pt; color: #000 !important; }
+          .plan-activity { font-weight: 700; font-size: 11pt; color: #000 !important; }
+          .plan-details { font-size: 9.5pt; color: #334155 !important; margin-top: 2px; }
+          .plan-match-row { display: flex !important; align-items: center; justify-content: space-between; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 10px; margin-bottom: 6px; font-size: 10pt; }
+          .plan-logo { width: 18px !important; height: 18px !important; object-fit: contain; }
+        }
+      `}</style>
+
+      <div className="plan-no-print flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
         <div>
           <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
             <ListTodo className="h-6 w-6 text-emerald-600" />
@@ -77,21 +118,87 @@ export default function DailyPlanner({ calendar, units, onUpdateCalendarDay }: P
           </h2>
           <p className="text-sm text-slate-500 mt-1">Private minute-by-minute execution notes</p>
         </div>
-        <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 p-1.5 rounded-lg shadow-inner">
-          <CalendarDays className="h-5 w-5 text-slate-400 ml-2" />
-          <select 
-            value={selectedDate} 
-            onChange={e => setSelectedDate(e.target.value)}
-            className="bg-transparent font-bold text-slate-700 outline-none p-1 cursor-pointer"
-          >
-            {schoolDays.map(d => (
-              <option key={d.fecha} value={d.fecha}>{d.fecha} (Day {d.dia})</option>
-            ))}
-          </select>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 p-1.5 rounded-lg shadow-inner">
+            <CalendarDays className="h-5 w-5 text-slate-400 ml-2" />
+            <select
+              value={selectedDate}
+              onChange={e => setSelectedDate(e.target.value)}
+              className="bg-transparent font-bold text-slate-700 outline-none p-1 cursor-pointer"
+            >
+              {schoolDays.map(d => (
+                <option key={d.fecha} value={d.fecha}>{d.fecha} (Day {d.dia})</option>
+              ))}
+            </select>
+          </div>
+          <button onClick={handlePrint} className="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white shadow-sm hover:bg-blue-700 transition">
+            <Printer className="h-4 w-4" /> Print
+          </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* Print-only view: today's schedule + the run-of-show, no editing controls */}
+      <div id="printable-plan" className="hidden print:block">
+        <h1 className="text-2xl font-black text-center mb-1">{activeDay.unitName || 'Class'} — {activeDay.fecha}</h1>
+        {activeDay.activity && <p className="text-center text-sm text-slate-600 mb-4">{activeDay.activity}</p>}
+
+        {lessonPlan.goals && (
+          <div className="mb-4">
+            <h2 className="text-sm font-black uppercase tracking-wider mb-1">Teacher Goals</h2>
+            <p className="text-sm">{lessonPlan.goals}</p>
+          </div>
+        )}
+
+        {todaysMatches.length > 0 && (
+          <div className="mb-5">
+            <h2 className="text-sm font-black uppercase tracking-wider mb-2">Today's Schedule</h2>
+            {todaysMatches.map(m => {
+              if (m.match_type === 'minigame') {
+                const isBase = !m.team_set_id || m.team_set_id === 'base';
+                const displayTeams = isBase ? activeUnit?.unit.baseTeams : activeUnit?.unit.teamSets?.find(ts => ts.id === m.team_set_id)?.teams;
+                return (
+                  <div key={m.id} className="plan-match-row">
+                    <span style={{ fontWeight: 700 }}><Clock className="inline h-3 w-3" /> {m.time} <MapPin className="inline h-3 w-3" /> {m.location}</span>
+                    <span style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {displayTeams?.map(t => (
+                        <span key={t.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 700 }}>
+                          <img src={getLogoUrl(t.name)} onError={e => e.currentTarget.style.display = 'none'} className="plan-logo" alt="" /> {t.name}
+                        </span>
+                      )) ?? <Users className="inline h-3 w-3" />}
+                    </span>
+                  </div>
+                );
+              }
+              return (
+                <div key={m.id} className="plan-match-row">
+                  <span style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    {m.home_team !== 'TBD' && <img src={getLogoUrl(m.home_team)} onError={e => e.currentTarget.style.display = 'none'} className="plan-logo" alt="" />}
+                    {m.home_team}
+                  </span>
+                  <span style={{ fontSize: '9pt', color: '#334155' }}>{m.time} • {m.location}</span>
+                  <span style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    {m.away_team}
+                    {m.away_team !== 'TBD' && <img src={getLogoUrl(m.away_team)} onError={e => e.currentTarget.style.display = 'none'} className="plan-logo" alt="" />}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <h2 className="text-sm font-black uppercase tracking-wider mb-2">Run of Show</h2>
+        {lessonPlan.timeline.map(item => (
+          <div key={item.id} className="plan-block">
+            <div className="plan-time">{item.time}</div>
+            <div>
+              <div className="plan-activity">{item.activity}</div>
+              {item.details && <div className="plan-details">{item.details}</div>}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="plan-no-print grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="space-y-4">
           <div className="bg-slate-800 rounded-xl p-5 text-white shadow-md">
             <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 mb-1">Calendar Context</h3>
@@ -169,10 +276,28 @@ export default function DailyPlanner({ calendar, units, onUpdateCalendarDay }: P
           <div className="space-y-4">
             {lessonPlan.timeline.map((item, index) => (
               <div key={item.id} className="group flex gap-3 p-3 rounded-xl border border-slate-200 hover:border-indigo-300 transition-colors bg-slate-50">
+                <div className="flex shrink-0 flex-col gap-1 pt-1">
+                  <button
+                    onClick={() => moveTimelineItem(index, -1)}
+                    disabled={index === 0}
+                    title="Move up"
+                    className="rounded p-1 text-slate-400 hover:bg-indigo-100 hover:text-indigo-700 disabled:opacity-20 disabled:hover:bg-transparent transition"
+                  >
+                    <ArrowUp className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => moveTimelineItem(index, 1)}
+                    disabled={index === lessonPlan.timeline.length - 1}
+                    title="Move down"
+                    className="rounded p-1 text-slate-400 hover:bg-indigo-100 hover:text-indigo-700 disabled:opacity-20 disabled:hover:bg-transparent transition"
+                  >
+                    <ArrowDown className="w-4 h-4" />
+                  </button>
+                </div>
                 <div className="w-20 shrink-0">
-                  <input 
-                    type="text" 
-                    value={item.time} 
+                  <input
+                    type="text"
+                    value={item.time}
                     onChange={e => updateTimelineItem(index, { time: e.target.value })}
                     placeholder="11:00"
                     className="w-full bg-white border border-slate-300 rounded p-2 text-sm font-black text-slate-700 text-center focus:border-indigo-500 outline-none"

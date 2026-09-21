@@ -5,29 +5,13 @@ import type { Player, CalendarDay, DailyLog } from '../types';
 interface Props {
   player: Player;
   log?: DailyLog;
+  calendar: CalendarDay[];
   onClose: () => void;
   onUpdatePlayer: (id: string, updates: Partial<Player>) => void;
   onUpdateLog: (playerId: string, log: DailyLog) => void;
 }
 
-// Temporary hardcoded calendar based on your Firestore A/B structure
-const myCalendar: CalendarDay[] = [
-  { fecha: "2026-09-04", ciclo: null, dia: null, status: "no-school", note: "", manualOverride: false },
-  { fecha: "2026-09-07", ciclo: null, dia: null, status: "no-school", note: "", manualOverride: false },
-  { fecha: "2026-09-08", ciclo: null, dia: null, status: "no-class", note: "Full AMES Day", manualOverride: true },
-  { fecha: "2026-09-09", ciclo: "A", dia: 3, status: "school", note: "", manualOverride: true },
-  { fecha: "2026-09-10", ciclo: "B", dia: 3, status: "school", note: "", manualOverride: true },
-  { fecha: "2026-09-11", ciclo: "A", dia: 4, status: "school", note: "", manualOverride: false },
-  { fecha: "2026-09-14", ciclo: "B", dia: 4, status: "school", note: "", manualOverride: false },
-  { fecha: "2026-09-15", ciclo: "A", dia: 5, status: "school", note: "", manualOverride: false },
-  { fecha: "2026-09-16", ciclo: null, dia: null, status: "in-person-pd", note: "", manualOverride: false },
-  { fecha: "2026-09-17", ciclo: "B", dia: 5, status: "school", note: "", manualOverride: false },
-  { fecha: "2026-09-18", ciclo: "A", dia: 6, status: "school", note: "", manualOverride: false },
-  { fecha: "2026-09-21", ciclo: "B", dia: 6, status: "school", note: "", manualOverride: false },
-  { fecha: "2026-09-22", flex: "A", dia: 7, status: "school", note: "", manualOverride: false }
-];
-
-export default function StudentLogModal({ player, log, onClose, onUpdatePlayer, onUpdateLog }: Props) {
+export default function StudentLogModal({ player, log, calendar, onClose, onUpdatePlayer, onUpdateLog }: Props) {
   // --- Future Absences State ---
   const [selectedDate, setSelectedDate] = useState('');
   const [reason, setReason] = useState('');
@@ -38,8 +22,10 @@ export default function StudentLogModal({ player, log, onClose, onUpdatePlayer, 
   const [deductions, setDeductions] = useState(currentLog.deductions || 0);
 
   const upcomingSchoolDays = useMemo(() => {
-    return myCalendar.filter(d => d.status === 'school');
-  }, []);
+    return [...calendar]
+      .filter(d => d.status === 'school' || d.status === 'half-day')
+      .sort((a, b) => a.fecha.localeCompare(b.fecha));
+  }, [calendar]);
 
   // --- Behavior Actions ---
   const handleApplyPoints = (pointValue: number, reasonText: string) => {

@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Shield, Eye, Users, CalendarDays, LogIn, LogOut, BookOpen, LayoutDashboard,
-  ClipboardCheck, Star, ClipboardList, Wand2, Grid3x3, Trophy, School, Loader2, CloudOff, Cloud, Activity, Plus, Lock, ListTodo, FileSpreadsheet
+  ClipboardCheck, Star, ClipboardList, Grid3x3, Trophy, School, Loader2, CloudOff, Cloud, Activity, Plus, Lock, ListTodo, FileSpreadsheet
 } from 'lucide-react';
 import type {
   ClassData, Unit, ScheduleData, SyllabusData, DailyLogMap, DailyLog, ScoreType,
@@ -17,14 +17,13 @@ import PublicDashboard from './components/PublicDashboard';
 import AttendanceTracker from './components/AttendanceTracker';
 import DailyGrades from './components/DailyGrades';
 import RosterManager from './components/RosterManager';
-import TeamCreator from './components/TeamCreator';
 import UnitScheduleBuilder from './components/UnitScheduleBuilder';
 import Leaderboards from './components/Leaderboards';
 import WorkoutPlayer from './components/WorkoutPlayer';
 import MasterCalendarBuilder from './components/MasterCalendarBuilder';
 import DailyPlanner from './components/DailyPlanner';
 
-type AdminView = 'teams' | 'schedule' | 'attendance' | 'grades' | 'roster' | 'teamcreator' | 'calendar'| 'builder' | 'planner' | 'leaderboards';
+type AdminView = 'teams' | 'schedule' | 'attendance' | 'roster' | 'calendar' | 'builder' | 'leaderboards';
 type PublicView = 'syllabus' | 'dashboard' | 'leaderboards' | 'workout';
 
 const allPlayerIds = (c: ClassData): string[] => c.roster?.map((p) => p.id) || [];
@@ -44,13 +43,19 @@ let playerIdCounter = 1000;
 const genPlayerId = (classId: string) => `${classId}_IMP_${Date.now()}_${playerIdCounter++}`;
 const genMatchId = () => Date.now() + Math.floor(Math.random() * 100000);
 
+const ADMIN_SESSION_KEY = 'pe_admin_authed';
+
 export default function App() {
-  const [route, setRoute] = useState<'student' | 'admin_login' | 'admin'>(
-    window.location.hash === '#admin' ? 'admin_login' : 'student'
-  );
+  const [route, setRoute] = useState<'student' | 'admin_login' | 'admin'>(() => {
+    if (window.location.hash !== '#admin') return 'student';
+    return sessionStorage.getItem(ADMIN_SESSION_KEY) === '1' ? 'admin' : 'admin_login';
+  });
   const [pin, setPin] = useState('');
+  const [previewFromAdmin, setPreviewFromAdmin] = useState(false);
 
   const [adminView, setAdminView] = useState<AdminView>('teams');
+  const [logsSubTab, setLogsSubTab] = useState<'daily' | 'exceptions'>('daily');
+  const [calendarSubTab, setCalendarSubTab] = useState<'calendar' | 'planner'>('calendar');
   const [publicView, setPublicView] = useState<PublicView>('syllabus');
   const [classes, setClasses] = useState<ClassData[]>(initialClasses);
   const [activeClassId, setActiveClassId] = useState<string>(initialClasses[0].id);
@@ -319,9 +324,18 @@ export default function App() {
       if (ts) sourceTeams = ts.teams;
     }
     if (!sourceTeams.length) return c;
+
+    // Don't place students who are absent today or long-term injured/out onto today's teams.
+    const todaysAttendance = deriveAttendance(c.gradebook?.[dateStr] || {});
+    const cloned: Team[] = JSON.parse(JSON.stringify(sourceTeams));
+    const filteredTeams = cloned.map((t) => ({
+      ...t,
+      players: t.players.filter((p) => todaysAttendance[p.id] !== 'absent' && p.availability !== 'injured' && p.availability !== 'out'),
+    }));
+
     const snapshot: DailyTeamSnapshot = {
       baseTeamSetId: sourceId,
-      teams: JSON.parse(JSON.stringify(sourceTeams)) 
+      teams: filteredTeams
     };
     return { ...c, dailyTeams: { ...(c.dailyTeams || {}), [dateStr]: snapshot } };
   });
@@ -411,14 +425,20 @@ export default function App() {
     }
   }));
 
-  const handleAwardTeamWin = (teamId: number, teamSetId: string) => updateClass((c) => {
+  const handleAwardTeamWin = (teamId: number, teamSetId: string, dateStr?: string) => updateClass((c) => {
     const activeUnit = c.units.find(u => u.id === (c.activeUnitId || c.units[0]?.id));
     if (!activeUnit) return c;
-    const teamSet = activeUnit.unit.teamSets?.find(ts => ts.id === teamSetId);
-    if (!teamSet) return c;
-    const team = teamSet.teams.find(t => t.id === teamId);
+
+    // Prefer that day's actual Game Day Snapshot roster (subs included) over the master template,
+    // mirroring how handleUpdateScore already attributes standard-match wins.
+    const dailySnapshotTeams = dateStr ? c.dailyTeams?.[dateStr]?.teams : undefined;
+    const teamSet = teamSetId === 'base' ? undefined : activeUnit.unit.teamSets?.find(ts => ts.id === teamSetId);
+    const fallbackTeams = teamSetId === 'base' ? activeUnit.unit.baseTeams : teamSet?.teams;
+    const sourceTeams = dailySnapshotTeams || fallbackTeams;
+    if (!sourceTeams) return c;
+    const team = sourceTeams.find(t => t.id === teamId);
     if (!team) return c;
-    
+
     const playerIds = team.players.map(p => p.id);
     
     const nextRoster = c.roster.map(p => 
@@ -542,8 +562,22 @@ export default function App() {
 
   const handleAdminLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (pin === '1234') setRoute('admin');
-    else alert('Incorrect PIN');
+    if (pin === '1234') {
+      sessionStorage.setItem(ADMIN_SESSION_KEY, '1');
+      setRoute('admin');
+    } else alert('Incorrect PIN');
+  };
+
+  const handleAdminLogout = () => {
+    sessionStorage.removeItem(ADMIN_SESSION_KEY);
+    setPin('');
+    setPreviewFromAdmin(false);
+    setRoute('admin_login');
+  };
+
+  const handleExitPreview = () => {
+    setPreviewFromAdmin(false);
+    setRoute('admin');
   };
 
   if (route === 'admin_login') {
@@ -605,24 +639,31 @@ export default function App() {
               <NavButton active={adminView === 'teams'} onClick={() => setAdminView('teams')} icon={<Users className="h-4 w-4" />}>Teams</NavButton>
               <NavButton active={adminView === 'schedule'} onClick={() => setAdminView('schedule')} icon={<CalendarDays className="h-4 w-4" />}>Scores</NavButton>
               <NavButton active={adminView === 'attendance'} onClick={() => setAdminView('attendance')} icon={<ClipboardCheck className="h-4 w-4" />}>Logs</NavButton>
-              <NavButton active={adminView === 'grades'} onClick={() => setAdminView('grades')} icon={<FileSpreadsheet className="h-4 w-4" />}>Grades</NavButton>
               <NavButton active={adminView === 'roster'} onClick={() => setAdminView('roster')} icon={<ClipboardList className="h-4 w-4" />}>Roster</NavButton>
-              <NavButton active={adminView === 'teamcreator'} onClick={() => setAdminView('teamcreator')} icon={<Wand2 className="h-4 w-4" />}>Generator</NavButton>
               <NavButton active={adminView === 'builder'} onClick={() => setAdminView('builder')} icon={<Grid3x3 className="h-4 w-4" />}>Builder</NavButton>
               <NavButton active={adminView === 'calendar'} onClick={() => setAdminView('calendar')} icon={<CalendarDays className="h-4 w-4" />}>Calendar</NavButton>
-              <NavButton active={adminView === 'planner'} onClick={() => setAdminView('planner')} icon={<ListTodo className="h-4 w-4" />}>Planner</NavButton>
               <NavButton active={adminView === 'leaderboards'} onClick={() => setAdminView('leaderboards')} icon={<Star className="h-4 w-4" />}>Leaderboards</NavButton>
             </nav>
           ) : (
-            <nav className="flex gap-2">
+            <nav className="flex flex-wrap items-center gap-2">
               <NavButton active={publicView === 'syllabus'} onClick={() => setPublicView('syllabus')} icon={<BookOpen className="h-4 w-4" />}>Unit Plan</NavButton>
               <NavButton active={publicView === 'dashboard'} onClick={() => setPublicView('dashboard')} icon={<LayoutDashboard className="h-4 w-4" />}>Teams & Schedule</NavButton>
               <NavButton active={publicView === 'workout'} onClick={() => setPublicView('workout')} icon={<CalendarDays className="h-4 w-4" />}>Daily Log</NavButton>
+              {previewFromAdmin && (
+                <button onClick={handleExitPreview} className="flex items-center gap-1.5 rounded-lg bg-amber-400 px-3 py-1.5 text-sm font-bold text-amber-950 shadow-sm hover:bg-amber-300 transition">
+                  <LogOut className="h-4 w-4" /> Exit Preview → Back to Admin
+                </button>
+              )}
             </nav>
           )}
 
           <div className="ml-auto flex items-center gap-2">
             {route === 'admin' && <SaveStatusIndicator saving={saving} firestoreReady={firestoreReady} loadError={loadError} />}
+            {route === 'admin' && (
+              <button onClick={handleAdminLogout} title="Log out of admin" className="flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-1.5 text-sm font-bold text-slate-300 hover:bg-slate-700 hover:text-white transition">
+                <LogOut className="h-4 w-4" /> Log Out
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -654,53 +695,92 @@ export default function App() {
                   onSwapMaster={handleSwap} 
                   onMoveMaster={handleMovePlayer} 
                   onRenameMaster={handleRenameTeam} 
-                  onPreviewStudentView={() => { setRoute('student'); setPublicView('dashboard'); }} 
+                  onPreviewStudentView={() => { setPreviewFromAdmin(true); setRoute('student'); setPublicView('dashboard'); }} 
                 />
               )
               : adminView === 'schedule' ? <ScheduleStandings key={`sched-${unit.unit_id}`} unit={unit} schedule={schedule} isAdmin={true} onUpdateScore={handleUpdateScore} onAwardTeamWin={handleAwardTeamWin} onToggleMatchComplete={handleToggleMatchComplete} />
               : adminView === 'attendance' ? (
                   <div className="space-y-4">
-                    <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-3">
-                       <h3 className="font-bold text-slate-800 flex items-center gap-2 text-lg"><CalendarDays className="w-5 h-5 text-blue-600"/> Cumulative Gradebook Date</h3>
-                       <div className="flex items-center gap-2">
-                         <span className="text-sm font-semibold text-slate-500">Viewing Log For:</span>
-                         <input type="date" value={attendanceDate} onChange={(e) => setAttendanceDate(e.target.value)} className="border border-slate-300 rounded-lg px-3 py-2 font-bold text-slate-700 outline-none focus:border-blue-500 shadow-sm" />
-                       </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setLogsSubTab('daily')}
+                        className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${logsSubTab === 'daily' ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                      >
+                        <ClipboardCheck className="h-4 w-4" /> Daily Log
+                      </button>
+                      <button
+                        onClick={() => setLogsSubTab('exceptions')}
+                        className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${logsSubTab === 'exceptions' ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                      >
+                        <FileSpreadsheet className="h-4 w-4" /> Exceptions Report
+                      </button>
                     </div>
-                    <AttendanceTracker 
-                       key={`att-${unit.unit_id}-${attendanceDate}`} 
-                       roster={roster} 
-                       unit={unit} 
-                       logs={activeDailyLogs} 
-                       quarterHistory={quarterHistory} 
-                       floorGrid={floorGrid}
-                       classMeetsToday={classMeetsToday} 
-                       onUpdateLog={(playerId, log) => handleUpdateGradebookLog(attendanceDate, playerId, log)} 
-                       onQuickSet={(playerId, type) => handleQuickSetGradebook(attendanceDate, playerId, type)} 
-                       onMarkAll={(type) => handleMarkAllGradebook(attendanceDate, type)} 
-                       onUpdatePlayer={handleUpdatePlayer} 
-                       onUpdateFloorGrid={(g) => updateClass((c) => ({ ...c, floorGrid: g }))} 
-                    />
+                    {logsSubTab === 'daily' ? (
+                      <>
+                        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                           <h3 className="font-bold text-slate-800 flex items-center gap-2 text-lg"><CalendarDays className="w-5 h-5 text-blue-600"/> Cumulative Gradebook Date</h3>
+                           <div className="flex items-center gap-2">
+                             <span className="text-sm font-semibold text-slate-500">Viewing Log For:</span>
+                             <input type="date" value={attendanceDate} onChange={(e) => setAttendanceDate(e.target.value)} className="border border-slate-300 rounded-lg px-3 py-2 font-bold text-slate-700 outline-none focus:border-blue-500 shadow-sm" />
+                           </div>
+                        </div>
+                        <AttendanceTracker
+                           key={`att-${unit.unit_id}-${attendanceDate}`}
+                           roster={roster}
+                           unit={unit}
+                           logs={activeDailyLogs}
+                           quarterHistory={quarterHistory}
+                           floorGrid={floorGrid}
+                           classMeetsToday={classMeetsToday}
+                           onUpdateLog={(playerId, log) => handleUpdateGradebookLog(attendanceDate, playerId, log)}
+                           onQuickSet={(playerId, type) => handleQuickSetGradebook(attendanceDate, playerId, type)}
+                           onMarkAll={(type) => handleMarkAllGradebook(attendanceDate, type)}
+                           onUpdatePlayer={handleUpdatePlayer}
+                           onUpdateFloorGrid={(g) => updateClass((c) => ({ ...c, floorGrid: g }))}
+                        />
+                      </>
+                    ) : (
+                      <DailyGrades key={`grades-${unit.unit_id}`} roster={roster} gradebook={gradebook} />
+                    )}
                   </div>
                 )
-              : adminView === 'grades' ? <DailyGrades key={`grades-${unit.unit_id}`} roster={roster} gradebook={gradebook} />
               : adminView === 'roster' ? <RosterManager key={`roster-${activeClassId}`} roster={roster} unit={unit} floorGrid={floorGrid} classId={activeClassId} onAddPlayer={handleAddPlayer} onBulkAddPlayers={handleBulkAddPlayers} onUpdatePlayer={handleUpdatePlayer} onDeletePlayer={handleDeletePlayer} onUpdateFloorGrid={(g) => updateClass((c) => ({ ...c, floorGrid: g }))} />
-              : adminView === 'teamcreator' ? <TeamCreator key={`tc-${unit.unit_id}`} roster={roster} unit={unit} onGenerate={handleGenerateTeams} onMovePlayer={handleMovePlayer} onDeleteTeamSet={handleDeleteTeamSet} />
-              : adminView === 'calendar' ? <MasterCalendarBuilder key={`cal-${activeClassId}`} calendar={activeClass.masterCalendar || []} classId={activeClassId} onSave={(cal) => updateClass(c => ({ ...c, masterCalendar: cal }))} />
-              : adminView === 'planner' ? <DailyPlanner key={`plan-${activeClassId}`} calendar={activeClass.masterCalendar || []} units={activeClass.units || []} onUpdateCalendarDay={(dateStr, updates) => updateClass(c => ({ ...c, masterCalendar: (c.masterCalendar || []).map(day => day.fecha === dateStr ? { ...day, ...updates } : day) }))} />
+              : adminView === 'calendar' ? (
+                  <div className="space-y-4">
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setCalendarSubTab('calendar')}
+                        className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${calendarSubTab === 'calendar' ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                      >
+                        <CalendarDays className="h-4 w-4" /> Semester Calendar
+                      </button>
+                      <button
+                        onClick={() => setCalendarSubTab('planner')}
+                        className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${calendarSubTab === 'planner' ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                      >
+                        <ListTodo className="h-4 w-4" /> Daily Planner
+                      </button>
+                    </div>
+                    {calendarSubTab === 'calendar' ? (
+                      <MasterCalendarBuilder key={`cal-${activeClassId}`} calendar={activeClass.masterCalendar || []} classId={activeClassId} onSave={(cal) => updateClass(c => ({ ...c, masterCalendar: cal }))} />
+                    ) : (
+                      <DailyPlanner key={`plan-${activeClassId}`} calendar={activeClass.masterCalendar || []} units={activeClass.units || []} onUpdateCalendarDay={(dateStr, updates) => updateClass(c => ({ ...c, masterCalendar: (c.masterCalendar || []).map(day => day.fecha === dateStr ? { ...day, ...updates } : day) }))} />
+                    )}
+                  </div>
+                )
               : adminView === 'leaderboards' ? (
-                <Leaderboards 
-                  roster={roster} 
-                  unit={unit} 
-                  wins={wins} 
-                  teammatePoints={teammatePoints} 
+                <Leaderboards
+                  roster={roster}
+                  unit={unit}
+                  wins={wins}
+                  teammatePoints={teammatePoints}
                   schedule={schedule}
                   dailyTeams={activeClass.dailyTeams || {}}
                   onUpdateWins={handleUpdatePlayerWins}
                   onUpdateTeammatePoints={handleUpdateTeammatePoints}
                 />
-            )
-              : <UnitScheduleBuilder key={`builder-${unit.unit_id}`} unitName={unit.unit_name} onUpdateUnitName={handleUpdateUnitName} syllabus={syllabus} schedule={schedule} teamNames={teamNames} teamSets={unit.teamSets} onUpdateSyllabus={handleUpdateSyllabus} onAddMatch={handleAddMatch} onUpdateMatch={handleUpdateMatch} onDeleteMatch={handleDeleteMatch} />}
+              )
+              : <UnitScheduleBuilder key={`builder-${unit.unit_id}`} unitName={unit.unit_name} onUpdateUnitName={handleUpdateUnitName} syllabus={syllabus} schedule={schedule} teamNames={teamNames} teamSets={unit.teamSets} calendar={activeClass.masterCalendar || []} roster={roster} unit={unit} onUpdateSyllabus={handleUpdateSyllabus} onAddMatch={handleAddMatch} onUpdateMatch={handleUpdateMatch} onDeleteMatch={handleDeleteMatch} onGenerateTeams={handleGenerateTeams} onMovePlayer={handleMovePlayer} onDeleteTeamSet={handleDeleteTeamSet} />}
 
               {adminView === 'builder' && (
                 <div className="mt-16 border-t border-red-200 pt-8 pb-8">
