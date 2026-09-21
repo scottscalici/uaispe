@@ -455,6 +455,12 @@ export default function App() {
     return { ...c, gradebook: nextGradebook };
   });
 
+  const handleClearAllGradebook = (dateStr: string) => updateClass((c) => {
+    const nextGradebook = { ...(c.gradebook || {}) };
+    nextGradebook[dateStr] = {};
+    return { ...c, gradebook: nextGradebook };
+  });
+
   const handleCreateNewUnit = () => {
     const timestamp = Date.now();
     const sharedLinkID = `link_${timestamp}`; 
@@ -643,9 +649,10 @@ export default function App() {
               {adminView === 'teams' ? (
                 <TeamManager 
                   key={`teams-${unit.unit_id}-${attendanceDate}`} 
-                  unit={unit} 
-                  isAdmin={true} 
+                  unit={unit}
+                  isAdmin={true}
                   dateStr={attendanceDate}
+                  classId={activeClassId}
                   dailyTeams={activeClass.dailyTeams || {}}
                   attendance={attendance}
                   onInitDaily={(setId) => handleInitDailyTeams(attendanceDate, setId)}
@@ -696,6 +703,7 @@ export default function App() {
                            onUpdateLog={(playerId, log) => handleUpdateGradebookLog(attendanceDate, playerId, log)}
                            onQuickSet={(playerId, type) => handleQuickSetGradebook(attendanceDate, playerId, type)}
                            onMarkAll={(type) => handleMarkAllGradebook(attendanceDate, type)}
+                           onClearAll={() => handleClearAllGradebook(attendanceDate)}
                            onUpdatePlayer={handleUpdatePlayer}
                            onUpdateFloorGrid={(g) => updateClass((c) => ({ ...c, floorGrid: g }))}
                         />

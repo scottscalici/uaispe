@@ -6,26 +6,27 @@ interface Props {
   unit: Unit;
   isAdmin: boolean;
   dateStr: string;
+  classId: string;
   dailyTeams: Record<string, DailyTeamSnapshot>;
   attendance: AttendanceMap;
-  
+
   onInitDaily: (teamSetId: string) => void;
   onClearDaily: () => void;
   onSwapDaily: (p1Id: string, t1Id: number, p2Id: string, t2Id: number) => void;
   onMoveDaily: (playerId: string, fromTeamId: number, toTeamId: number) => void;
   onRenameDaily: (teamId: number, newName: string) => void;
-  
+
   onSwapMaster: (p1Id: string, t1Id: number, p2Id: string, t2Id: number) => void;
   onMoveMaster: (playerId: string, fromTeamId: number, toTeamId: number) => void;
   onRenameMaster: (teamId: number, newName: string) => void;
-  
+
   onPreviewStudentView?: () => void;
 }
 
-export default function TeamManager({ 
-  unit, isAdmin, dateStr, dailyTeams, attendance, 
+export default function TeamManager({
+  unit, isAdmin, dateStr, classId, dailyTeams, attendance,
   onInitDaily, onClearDaily, onSwapDaily, onMoveDaily, onRenameDaily,
-  onSwapMaster, onMoveMaster, onRenameMaster, onPreviewStudentView 
+  onSwapMaster, onMoveMaster, onRenameMaster, onPreviewStudentView
 }: Props) {
   const [viewMode, setViewMode] = useState<'daily' | 'master'>('daily');
   const [masterSetId, setMasterSetId] = useState<string>('base');
@@ -149,20 +150,22 @@ export default function TeamManager({
             position: absolute; left: 0; top: 0; width: 100%; background: white !important;
           }
           .no-print { display: none !important; }
+          .print-title-wrap { margin-bottom: 8px !important; }
+          .print-title { font-size: 14pt !important; padding-bottom: 3px !important; padding-left: 16px !important; padding-right: 16px !important; }
           .print-grid {
             display: grid !important;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)) !important;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)) !important;
             justify-content: center !important;
             align-content: flex-start !important;
-            gap: 10px !important;
+            gap: 8px !important;
           }
-          .print-card { break-inside: avoid; page-break-inside: avoid; border: 2px solid #cbd5e1 !important; border-radius: 8px !important; background: #ffffff !important; box-shadow: none !important; max-width: 300px; margin: 0 auto; width: 100%; }
-          .print-header { background: #f1f5f9 !important; color: #0f172a !important; border-bottom: 2px solid #cbd5e1 !important; flex-direction: column !important; text-align: center; padding: 10px 8px !important; gap: 4px !important; }
+          .print-card { break-inside: avoid; page-break-inside: avoid; border: 1.5px solid #cbd5e1 !important; border-radius: 6px !important; background: #ffffff !important; box-shadow: none !important; max-width: 260px; margin: 0 auto; width: 100%; }
+          .print-header { background: #f1f5f9 !important; color: #0f172a !important; border-bottom: 1.5px solid #cbd5e1 !important; flex-direction: column !important; text-align: center; padding: 5px 8px !important; gap: 2px !important; }
           .print-header > div { flex-direction: column !important; align-items: center !important; }
-          .print-logo { width: 48px !important; height: 48px !important; margin: 0 auto; }
-          .print-text { font-size: 12pt !important; color: #000 !important; }
-          .print-roster-row { justify-content: center !important; }
-          .print-roster-name { font-size: 10.5pt !important; color: #1e293b !important; text-align: center; }
+          .print-logo { width: 30px !important; height: 30px !important; margin: 0 auto; }
+          .print-text { font-size: 10.5pt !important; color: #000 !important; }
+          .print-roster-row { justify-content: center !important; padding: 1px 8px !important; }
+          .print-roster-name { font-size: 9pt !important; color: #1e293b !important; text-align: center; }
         }
       `}</style>
 
@@ -270,8 +273,8 @@ export default function TeamManager({
       {/* Main Container marked for screen and print */}
       {activeTeams.length > 0 && (
         <div id="printable-team-rosters" className="space-y-4">
-          <div className="hidden print:block mb-6 text-center">
-            <h1 className="text-2xl font-black text-slate-900 border-b-2 border-slate-300 inline-block pb-2 px-10">{unit.unit_name} - {viewMode === 'daily' ? 'Today\'s Roster' : 'Master Roster'}</h1>
+          <div className="hidden print:block print-title-wrap text-center">
+            <h1 className="print-title font-black text-slate-900 border-b-2 border-slate-300 inline-block">{classId} {unit.unit_name}</h1>
           </div>
 
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 print-grid">

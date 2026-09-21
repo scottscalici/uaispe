@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, X, Clock, Ghost, UserX, BadgeCheck, HeartPulse, MinusCircle, RotateCcw, List, LayoutGrid } from 'lucide-react';
+import { Check, X, Clock, Ghost, UserX, BadgeCheck, HeartPulse, MinusCircle, RotateCcw, List, LayoutGrid, Eraser } from 'lucide-react';
 import type { Player, Unit, DailyLogMap, QuarterHistoryMap, FloorGrid, ScoreType } from '../types';
 import { emptyLog } from '../grading';
 
@@ -13,6 +13,7 @@ interface Props {
   onUpdateLog: (playerId: string, log: any) => void;
   onQuickSet: (playerId: string, type: ScoreType) => void;
   onMarkAll: (type: ScoreType) => void;
+  onClearAll: () => void;
   onUpdatePlayer: (playerId: string, updates: Partial<Player>) => void;
   onUpdateFloorGrid: (grid: FloorGrid) => void;
 }
@@ -25,7 +26,7 @@ const bgColorFor = (type: ScoreType | undefined) =>
   : type === 'present' ? 'bg-emerald-50 border-emerald-200'
   : 'bg-white border-slate-200 hover:border-blue-300';
 
-export default function AttendanceTracker({ roster, logs, floorGrid, classMeetsToday, onQuickSet, onMarkAll, onUpdatePlayer, onUpdateLog }: Props) {
+export default function AttendanceTracker({ roster, logs, floorGrid, classMeetsToday, onQuickSet, onMarkAll, onClearAll, onUpdatePlayer, onUpdateLog }: Props) {
   const [view, setView] = useState<'list' | 'grid'>('list');
 
   if (!classMeetsToday) {
@@ -161,6 +162,9 @@ export default function AttendanceTracker({ roster, logs, floorGrid, classMeetsT
           </div>
           <button onClick={() => onMarkAll('present')} className="flex items-center gap-1.5 rounded-md bg-emerald-100 px-3 py-1.5 text-sm font-bold text-emerald-700 hover:bg-emerald-200">
             <Check className="h-4 w-4" /> All Present
+          </button>
+          <button onClick={() => { if (confirm('Clear all attendance marks for this day?')) onClearAll(); }} className="flex items-center gap-1.5 rounded-md bg-slate-100 px-3 py-1.5 text-sm font-bold text-slate-600 hover:bg-slate-200">
+            <Eraser className="h-4 w-4" /> Clear All
           </button>
         </div>
       </div>
