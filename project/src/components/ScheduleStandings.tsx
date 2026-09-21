@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { CalendarDays, Clock, MapPin, BarChart3, History, Users, Plus, Trophy, Lock, Printer } from 'lucide-react';
+import { CalendarDays, Clock, MapPin, BarChart3, History, Users, Plus, Minus, Trophy, Lock, Printer } from 'lucide-react';
 import type { ScheduleData, Match, Unit } from '../types';
 import { computeStandings, rankStandings } from '../standings';
 
@@ -8,11 +8,12 @@ interface Props {
   schedule: ScheduleData;
   isAdmin: boolean;
   onUpdateScore: (matchId: number, side: 'home' | 'away', value: number | null) => void;
-  onAwardTeamWin: (teamId: number, teamSetId: string, dateStr?: string) => void;
+  onAwardTeamWin: (matchId: number, teamId: number, teamSetId: string, dateStr?: string) => void;
+  onUnawardTeamWin: (matchId: number, teamId: number, teamSetId: string, dateStr?: string) => void;
   onToggleMatchComplete: (matchId: number) => void;
 }
 
-export default function ScheduleStandings({ unit, schedule, isAdmin, onUpdateScore, onAwardTeamWin, onToggleMatchComplete }: Props) {
+export default function ScheduleStandings({ unit, schedule, isAdmin, onUpdateScore, onAwardTeamWin, onUnawardTeamWin, onToggleMatchComplete }: Props) {
   // NEW: Guarantee all matches are sorted perfectly by Date and Time
   const sortedAllMatches = useMemo(() => {
     return [...schedule.matches].sort((a, b) => {
@@ -167,6 +168,7 @@ export default function ScheduleStandings({ unit, schedule, isAdmin, onUpdateSco
               isAdmin={isAdmin}
               onUpdateScore={onUpdateScore}
               onAwardTeamWin={onAwardTeamWin}
+              onUnawardTeamWin={onUnawardTeamWin}
               onToggleMatchComplete={onToggleMatchComplete}
             />
           ))}
@@ -193,6 +195,7 @@ export default function ScheduleStandings({ unit, schedule, isAdmin, onUpdateSco
                 isAdmin={isAdmin}
                 onUpdateScore={onUpdateScore}
                 onAwardTeamWin={onAwardTeamWin}
+                onUnawardTeamWin={onUnawardTeamWin}
                 onToggleMatchComplete={onToggleMatchComplete}
                 locked
               />
@@ -288,7 +291,7 @@ function StandingsTable({ ranked, getLogoUrl }: { ranked: ReturnType<typeof rank
   );
 }
 
-function MatchCard({ match, unit, isAdmin, onUpdateScore, onAwardTeamWin, onToggleMatchComplete, locked }: any) {
+function MatchCard({ match, unit, isAdmin, onUpdateScore, onAwardTeamWin, onUnawardTeamWin, onToggleMatchComplete, locked }: any) {
   const homeVal = match.home_score ?? '';
   const awayVal = match.away_score ?? '';
   const editable = isAdmin && !locked;
@@ -314,19 +317,40 @@ function MatchCard({ match, unit, isAdmin, onUpdateScore, onAwardTeamWin, onTogg
           )}
         </div>
         <div className="space-y-2 mt-3">
-          {displayTeams?.map((team: any) => (
-            <div key={team.id} className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded-lg shadow-sm">
-              <span className="font-bold text-slate-800 text-sm">{team.name}</span>
-              {editable && !match.completed && (
-                <button
-                  onClick={() => onAwardTeamWin(team.id, setIdToPass, match.date_str)}
-                  className="flex items-center gap-1 bg-amber-100 text-amber-700 hover:bg-amber-200 hover:scale-105 transition-all px-3 py-1.5 rounded-md text-xs font-black shadow-sm"
-                >
-                  <Plus className="w-3.5 h-3.5" /> 1 Win
-                </button>
-              )}
-            </div>
-          ))}
+          {displayTeams?.map((team: any) => {
+            const count = match.awardedTeamCounts?.[team.id] || 0;
+            return (
+              <div key={team.id} className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded-lg shadow-sm">
+                <span className="font-bold text-slate-800 text-sm">{team.name}</span>
+                <div className="flex items-center gap-2">
+                  {count > 0 && (
+                    <span className="flex items-center gap-1 bg-emerald-100 text-emerald-700 px-2 py-1 rounded-md text-xs font-black" title="Wins awarded for this event">
+                      <Trophy className="w-3 h-3" /> {count}
+                    </span>
+                  )}
+                  {editable && !match.completed && (
+                    <div className="flex items-center gap-1">
+                      {count > 0 && (
+                        <button
+                          onClick={() => onUnawardTeamWin(match.id, team.id, setIdToPass, match.date_str)}
+                          title="Undo one award"
+                          className="flex h-7 w-7 items-center justify-center rounded-md bg-slate-100 text-slate-500 shadow-sm transition-all hover:bg-red-100 hover:text-red-600"
+                        >
+                          <Minus className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => onAwardTeamWin(match.id, team.id, setIdToPass, match.date_str)}
+                        className="flex items-center gap-1 bg-amber-100 text-amber-700 hover:bg-amber-200 hover:scale-105 transition-all px-3 py-1.5 rounded-md text-xs font-black shadow-sm"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> 1 Win
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
           {!displayTeams && <div className="text-slate-400 text-sm italic text-center py-2">Teams not found.</div>}
         </div>
         {editable && (

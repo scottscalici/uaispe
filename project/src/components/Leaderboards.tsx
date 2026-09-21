@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Trophy, Star, ChevronDown, ChevronUp, Plus, Minus, History, CalendarDays } from 'lucide-react';
+import { Trophy, Star, ChevronDown, ChevronUp, Plus, Minus, History, CalendarDays, RotateCcw } from 'lucide-react';
 import type { Player, Unit, WinMap, TeammatePointMap, ScheduleData, DailyTeamSnapshot, Match } from '../types';
 
 interface Props {
@@ -11,10 +11,11 @@ interface Props {
   dailyTeams: Record<string, DailyTeamSnapshot>;
   onUpdateWins: (playerId: string, delta: number) => void;
   onUpdateTeammatePoints: (playerId: string, delta: number) => void;
+  onRecalculateWins: () => void;
 }
 
-export default function Leaderboards({ 
-  roster, unit, wins, teammatePoints, schedule, dailyTeams, onUpdateWins, onUpdateTeammatePoints 
+export default function Leaderboards({
+  roster, unit, wins, teammatePoints, schedule, dailyTeams, onUpdateWins, onUpdateTeammatePoints, onRecalculateWins
 }: Props) {
   const [activeTab, setActiveTab] = useState<'wins' | 'teammates'>('wins');
   const [expandedPlayerId, setExpandedPlayerId] = useState<string | null>(null);
@@ -29,29 +30,40 @@ export default function Leaderboards({
     .sort((a, b) => (teammatePoints[b.id] || 0) - (teammatePoints[a.id] || 0));
 
   // Dynamic Audit Log: Reconstruct when a player won based on schedule & daily snapshots
-  const getPlayerWinHistory = (playerId: string): Match[] => {
-    const wonMatches: Match[] = [];
-    
-    // Scan all completed matches
-    schedule.matches.filter(m => m.completed && m.home_score !== null && m.away_score !== null).forEach(m => {
-      const winnerName = m.home_score! > m.away_score! ? m.home_team : (m.away_score! > m.home_score! ? m.away_team : null);
-      if (!winnerName) return; // It was a tie
+  interface WinHistoryEntry { match: Match; label: string; count?: number; }
 
-      // Figure out what the active roster was on that specific date
-      const targetSet = dailyTeams[m.date_str] 
+  const getPlayerWinHistory = (playerId: string): WinHistoryEntry[] => {
+    const entries: WinHistoryEntry[] = [];
+
+    schedule.matches.forEach(m => {
+      const resolvedTeams = dailyTeams[m.date_str]
         ? dailyTeams[m.date_str].teams
         : (m.team_set_id && m.team_set_id !== 'base'
             ? unit.teamSets?.find(ts => ts.id === m.team_set_id)?.teams
             : unit.baseTeams);
 
-      // Check if the player was on the winning team's roster for that match
-      const winnerTeam = targetSet?.find(t => t.name === winnerName);
+      if (m.match_type === 'minigame') {
+        Object.entries(m.awardedTeamCounts || {}).forEach(([teamIdStr, count]) => {
+          if (!count) return;
+          const team = resolvedTeams?.find(t => t.id === Number(teamIdStr));
+          if (team?.players.some(p => p.id === playerId)) {
+            entries.push({ match: m, label: `Mini-Games (${team.name})`, count });
+          }
+        });
+        return;
+      }
+
+      if (!(m.completed && m.home_score !== null && m.away_score !== null)) return;
+      const winnerName = m.home_score! > m.away_score! ? m.home_team : (m.away_score! > m.home_score! ? m.away_team : null);
+      if (!winnerName) return; // It was a tie
+
+      const winnerTeam = resolvedTeams?.find(t => t.name === winnerName);
       if (winnerTeam && winnerTeam.players.some(p => p.id === playerId)) {
-        wonMatches.push(m);
+        entries.push({ match: m, label: `${m.home_team} (${m.home_score}) vs ${m.away_team} (${m.away_score})` });
       }
     });
 
-    return wonMatches;
+    return entries;
   };
 
   const toggleExpand = (id: string) => {
@@ -60,12 +72,27 @@ export default function Leaderboards({
 
   const displayList = activeTab === 'wins' ? rankedByWins : rankedByTeammate;
 
+  const handleRecalculateClick = () => {
+    if (confirm('Reset every student\'s win count to 0 and rebuild it strictly from the schedule: completed match scores plus recorded mini-game awards. This cannot be undone.')) {
+      onRecalculateWins();
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
           <Trophy className="w-6 h-6 text-amber-500" /> {unit.unit_name} Leaderboards
         </h2>
+        {activeTab === 'wins' && (
+          <button
+            onClick={handleRecalculateClick}
+            title="Reset all wins to 0 and rebuild strictly from completed match scores"
+            className="flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-200 transition"
+          >
+            <RotateCcw className="w-3.5 h-3.5" /> Recalculate Wins
+          </button>
+        )}
       </div>
 
       <div className="flex bg-white rounded-xl shadow-sm border border-slate-200 p-1">
@@ -159,14 +186,17 @@ export default function Leaderboards({
                             <div className="flex items-center justify-center h-full text-sm text-slate-400 font-medium">No recorded wins yet.</div>
                           ) : (
                             <ul className="divide-y divide-slate-100">
-                              {history.map(match => (
-                                <li key={match.id} className="p-2.5 flex items-center justify-between text-sm">
+                              {history.map((entry, i) => (
+                                <li key={`${entry.match.id}-${i}`} className="p-2.5 flex items-center justify-between text-sm">
                                   <div className="flex items-center gap-2">
                                     <CalendarDays className="w-4 h-4 text-slate-400"/>
-                                    <span className="font-semibold text-slate-700">{new Date(match.date_str).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+                                    <span className="font-semibold text-slate-700">{new Date(entry.match.date_str).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
                                   </div>
-                                  <div className="text-slate-600">
-                                    <span className="font-bold text-slate-800">{match.home_team}</span> ({match.home_score}) vs <span className="font-bold text-slate-800">{match.away_team}</span> ({match.away_score})
+                                  <div className="text-slate-600 flex items-center gap-1.5">
+                                    {entry.label}
+                                    {entry.count && entry.count > 1 && (
+                                      <span className="bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full text-xs font-black">×{entry.count}</span>
+                                    )}
                                   </div>
                                 </li>
                               ))}

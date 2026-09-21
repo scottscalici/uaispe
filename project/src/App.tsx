@@ -268,6 +268,44 @@ export default function App() {
     nextPts[playerId] = Math.max(0, (nextPts[playerId] || 0) + delta);
     return { ...u, teammatePoints: nextPts };
   });
+
+  // Rebuilds `wins` from scratch using only completed standard/bracket match scores - the one
+  // source of win data that's fully reconstructable. Mini-game "+1 Win" clicks have no separate
+  // history to replay, so this necessarily zeroes those out too.
+  const handleRecalculateWins = () => updateClass((c) => {
+    const u = c.units.find(un => un.id === (c.activeUnitId || c.units[0]?.id));
+    if (!u) return c;
+
+    const resolveMatchTeams = (m: Match) => c.dailyTeams?.[m.date_str]
+      ? c.dailyTeams[m.date_str].teams
+      : (m.team_set_id && m.team_set_id !== 'base'
+          ? u.unit.teamSets?.find(ts => ts.id === m.team_set_id)?.teams
+          : u.unit.baseTeams);
+    const resolveTeamRoster = (m: Match, teamName: string) => resolveMatchTeams(m)?.find((t) => t.name === teamName);
+
+    const nextWins: Record<string, number> = {};
+    const nextMatches = u.schedule.matches.map((m) => {
+      if (m.match_type === 'minigame') {
+        const teams = resolveMatchTeams(m);
+        Object.entries(m.awardedTeamCounts || {}).forEach(([teamIdStr, count]) => {
+          if (!count) return;
+          const team = teams?.find(t => t.id === Number(teamIdStr));
+          team?.players.forEach((p) => { nextWins[p.id] = (nextWins[p.id] ?? 0) + count; });
+        });
+        return m;
+      }
+      if (!(m.completed && m.home_score !== null && m.away_score !== null)) {
+        return { ...m, winnerCredited: null };
+      }
+      const winnerName = m.home_score > m.away_score ? m.home_team : m.away_score > m.home_score ? m.away_team : null;
+      if (winnerName) {
+        resolveTeamRoster(m, winnerName)?.players.forEach((p) => { nextWins[p.id] = (nextWins[p.id] ?? 0) + 1; });
+      }
+      return { ...m, winnerCredited: winnerName };
+    });
+
+    return { ...c, units: c.units.map(un => un.id === u.id ? { ...u, wins: nextWins, schedule: { ...u.schedule, matches: nextMatches } } : un) };
+  });
   const handleGenerateTeams = (teams: Team[], teamSetName?: string) => updateActiveUnit((u) => {
     if (teamSetName) {
       const existingSetIndex = u.unit.teamSets?.findIndex(ts => ts.name.toLowerCase() === teamSetName.toLowerCase());
@@ -441,9 +479,13 @@ export default function App() {
     }
   }));
 
-  const handleAwardTeamWin = (teamId: number, teamSetId: string, dateStr?: string) => updateClass((c) => {
+  const awardTeamWinDelta = (matchId: number, teamId: number, teamSetId: string, dateStr: string | undefined, delta: 1 | -1) => updateClass((c) => {
     const activeUnit = c.units.find(u => u.id === (c.activeUnitId || c.units[0]?.id));
     if (!activeUnit) return c;
+    const match = activeUnit.schedule.matches.find(m => m.id === matchId);
+    if (!match) return c;
+
+    if (delta === -1 && (match.awardedTeamCounts?.[teamId] || 0) <= 0) return c;
 
     // Prefer that day's actual Game Day Snapshot roster (subs included) over the master template,
     // mirroring how handleUpdateScore already attributes standard-match wins.
@@ -458,10 +500,20 @@ export default function App() {
     // Credit the same `wins` map standard/bracket matches use, so mini-game wins actually
     // show up on the Leaderboards page (they previously wrote to an unused player field).
     const nextWins = { ...activeUnit.wins };
-    team.players.forEach((p) => { nextWins[p.id] = (nextWins[p.id] ?? 0) + 1; });
+    team.players.forEach((p) => { nextWins[p.id] = Math.max(0, (nextWins[p.id] ?? 0) + delta); });
 
-    return { ...c, units: c.units.map(u => u.id === activeUnit.id ? { ...u, wins: nextWins } : u) };
+    // Persist the award itself on the match - real, recomputable ground truth, not just a bare counter.
+    const nextMatches = activeUnit.schedule.matches.map((m) => {
+      if (m.id !== matchId) return m;
+      const nextCounts = { ...(m.awardedTeamCounts || {}) };
+      nextCounts[teamId] = Math.max(0, (nextCounts[teamId] || 0) + delta);
+      return { ...m, awardedTeamCounts: nextCounts };
+    });
+
+    return { ...c, units: c.units.map(u => u.id === activeUnit.id ? { ...u, wins: nextWins, schedule: { ...activeUnit.schedule, matches: nextMatches } } : u) };
   });
+  const handleAwardTeamWin = (matchId: number, teamId: number, teamSetId: string, dateStr?: string) => awardTeamWinDelta(matchId, teamId, teamSetId, dateStr, 1);
+  const handleUnawardTeamWin = (matchId: number, teamId: number, teamSetId: string, dateStr?: string) => awardTeamWinDelta(matchId, teamId, teamSetId, dateStr, -1);
 
   const handleToggleMatchComplete = (matchId: number) => updateActiveUnit((u) => ({
     ...u,
@@ -699,7 +751,7 @@ export default function App() {
                   onPreviewStudentView={() => { setPreviewFromAdmin(true); setRoute('student'); setPublicView('dashboard'); }} 
                 />
               )
-              : adminView === 'schedule' ? <ScheduleStandings key={`sched-${unit.unit_id}`} unit={unit} schedule={schedule} isAdmin={true} onUpdateScore={handleUpdateScore} onAwardTeamWin={handleAwardTeamWin} onToggleMatchComplete={handleToggleMatchComplete} />
+              : adminView === 'schedule' ? <ScheduleStandings key={`sched-${unit.unit_id}`} unit={unit} schedule={schedule} isAdmin={true} onUpdateScore={handleUpdateScore} onAwardTeamWin={handleAwardTeamWin} onUnawardTeamWin={handleUnawardTeamWin} onToggleMatchComplete={handleToggleMatchComplete} />
               : adminView === 'attendance' ? (
                   <div className="space-y-4">
                     <div className="flex gap-2">
@@ -779,6 +831,7 @@ export default function App() {
                   dailyTeams={activeClass.dailyTeams || {}}
                   onUpdateWins={handleUpdatePlayerWins}
                   onUpdateTeammatePoints={handleUpdateTeammatePoints}
+                  onRecalculateWins={handleRecalculateWins}
                 />
               )
               : <UnitScheduleBuilder key={`builder-${unit.unit_id}`} unitName={unit.unit_name} onUpdateUnitName={handleUpdateUnitName} syllabus={syllabus} schedule={schedule} teamNames={teamNames} teamSets={unit.teamSets} calendar={activeClass.masterCalendar || []} roster={roster} unit={unit} onUpdateSyllabus={handleUpdateSyllabus} onAddMatch={handleAddMatch} onUpdateMatch={handleUpdateMatch} onDeleteMatch={handleDeleteMatch} onGenerateTeams={handleGenerateTeams} onMovePlayer={handleMovePlayer} onDeleteTeamSet={handleDeleteTeamSet} />}
