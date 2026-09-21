@@ -78,11 +78,9 @@ export interface Match {
   location: string;
   completed: boolean;
   round_name?: string;
-  /** Name of the team whose roster was last credited a win for this match, so
-   *  re-editing a score (fixing a typo, clearing a field) never double-counts. */
-  winnerCredited?: string | null;
   /** Mini-games only: how many times each team id has been awarded a win for this
-   *  event, so "+1 Win" clicks are a real, recomputable record instead of a bare counter. */
+   *  event - real, recomputable ground truth (like a score is for a standard match),
+   *  not a bare counter. */
   awardedTeamCounts?: Record<number, number>;
 }
 

@@ -8,8 +8,8 @@ interface Props {
   schedule: ScheduleData;
   isAdmin: boolean;
   onUpdateScore: (matchId: number, side: 'home' | 'away', value: number | null) => void;
-  onAwardTeamWin: (matchId: number, teamId: number, teamSetId: string, dateStr?: string) => void;
-  onUnawardTeamWin: (matchId: number, teamId: number, teamSetId: string, dateStr?: string) => void;
+  onAwardTeamWin: (matchId: number, teamId: number) => void;
+  onUnawardTeamWin: (matchId: number, teamId: number) => void;
   onToggleMatchComplete: (matchId: number) => void;
 }
 
@@ -183,8 +183,8 @@ export default function ScheduleStandings({ unit, schedule, isAdmin, onUpdateSco
       {archivedMatches.length > 0 && (
         <div className="mt-8 pt-6 border-t border-slate-200">
           <div className="mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-500">
-            <Lock className="h-4 w-4" />
-            Archived Past Events (Locked)
+            <History className="h-4 w-4" />
+            Archived Past Events
           </div>
           <div className="grid grid-cols-1 gap-4 opacity-75 transition-opacity hover:opacity-100 lg:grid-cols-2">
             {archivedMatches.map((m) => (
@@ -197,7 +197,7 @@ export default function ScheduleStandings({ unit, schedule, isAdmin, onUpdateSco
                 onAwardTeamWin={onAwardTeamWin}
                 onUnawardTeamWin={onUnawardTeamWin}
                 onToggleMatchComplete={onToggleMatchComplete}
-                locked
+                locked={m.completed}
               />
             ))}
           </div>
@@ -299,7 +299,6 @@ function MatchCard({ match, unit, isAdmin, onUpdateScore, onAwardTeamWin, onUnaw
   if (match.match_type === 'minigame') {
     const isBase = !match.team_set_id || match.team_set_id === 'base';
     const displayTeams = isBase ? unit.baseTeams : unit.teamSets?.find((ts: any) => ts.id === match.team_set_id)?.teams;
-    const setIdToPass = isBase ? 'base' : match.team_set_id;
 
     return (
       <div className={`rounded-xl border bg-white p-4 shadow-sm transition-all ${match.completed ? 'border-emerald-300 bg-emerald-50/20' : 'border-indigo-300 ring-2 ring-indigo-50'}`}>
@@ -332,7 +331,7 @@ function MatchCard({ match, unit, isAdmin, onUpdateScore, onAwardTeamWin, onUnaw
                     <div className="flex items-center gap-1">
                       {count > 0 && (
                         <button
-                          onClick={() => onUnawardTeamWin(match.id, team.id, setIdToPass, match.date_str)}
+                          onClick={() => onUnawardTeamWin(match.id, team.id)}
                           title="Undo one award"
                           className="flex h-7 w-7 items-center justify-center rounded-md bg-slate-100 text-slate-500 shadow-sm transition-all hover:bg-red-100 hover:text-red-600"
                         >
@@ -340,7 +339,7 @@ function MatchCard({ match, unit, isAdmin, onUpdateScore, onAwardTeamWin, onUnaw
                         </button>
                       )}
                       <button
-                        onClick={() => onAwardTeamWin(match.id, team.id, setIdToPass, match.date_str)}
+                        onClick={() => onAwardTeamWin(match.id, team.id)}
                         className="flex items-center gap-1 bg-amber-100 text-amber-700 hover:bg-amber-200 hover:scale-105 transition-all px-3 py-1.5 rounded-md text-xs font-black shadow-sm"
                       >
                         <Plus className="w-3.5 h-3.5" /> 1 Win

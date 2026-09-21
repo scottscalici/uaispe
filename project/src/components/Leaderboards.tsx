@@ -1,24 +1,29 @@
-import { useState } from 'react';
-import { Trophy, Star, ChevronDown, ChevronUp, Plus, Minus, History, CalendarDays, RotateCcw } from 'lucide-react';
-import type { Player, Unit, WinMap, TeammatePointMap, ScheduleData, DailyTeamSnapshot, Match } from '../types';
+import { useMemo, useState } from 'react';
+import { Trophy, Star, ChevronDown, ChevronUp, Plus, Minus, History, CalendarDays } from 'lucide-react';
+import type { Player, Unit, TeammatePointMap, ScheduleData, DailyTeamSnapshot, Match } from '../types';
+import { computeWinsFromSchedule } from '../standings';
 
 interface Props {
   roster: Player[];
   unit: Unit;
-  wins: WinMap;
   teammatePoints: TeammatePointMap;
   schedule: ScheduleData;
   dailyTeams: Record<string, DailyTeamSnapshot>;
-  onUpdateWins: (playerId: string, delta: number) => void;
   onUpdateTeammatePoints: (playerId: string, delta: number) => void;
-  onRecalculateWins: () => void;
 }
 
 export default function Leaderboards({
-  roster, unit, wins, teammatePoints, schedule, dailyTeams, onUpdateWins, onUpdateTeammatePoints, onRecalculateWins
+  roster, unit, teammatePoints, schedule, dailyTeams, onUpdateTeammatePoints
 }: Props) {
   const [activeTab, setActiveTab] = useState<'wins' | 'teammates'>('wins');
   const [expandedPlayerId, setExpandedPlayerId] = useState<string | null>(null);
+
+  // Always computed fresh from the schedule + today's actual team rosters - never stored, so
+  // there's nothing to keep in sync when a roster changes.
+  const wins = useMemo(
+    () => computeWinsFromSchedule(schedule.matches, unit, dailyTeams),
+    [schedule, unit, dailyTeams]
+  );
 
   // Derive the ranked lists
   const rankedByWins = [...roster]
@@ -72,27 +77,12 @@ export default function Leaderboards({
 
   const displayList = activeTab === 'wins' ? rankedByWins : rankedByTeammate;
 
-  const handleRecalculateClick = () => {
-    if (confirm('Reset every student\'s win count to 0 and rebuild it strictly from the schedule: completed match scores plus recorded mini-game awards. This cannot be undone.')) {
-      onRecalculateWins();
-    }
-  };
-
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
           <Trophy className="w-6 h-6 text-amber-500" /> {unit.unit_name} Leaderboards
         </h2>
-        {activeTab === 'wins' && (
-          <button
-            onClick={handleRecalculateClick}
-            title="Reset all wins to 0 and rebuild strictly from completed match scores"
-            className="flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-200 transition"
-          >
-            <RotateCcw className="w-3.5 h-3.5" /> Recalculate Wins
-          </button>
-        )}
       </div>
 
       <div className="flex bg-white rounded-xl shadow-sm border border-slate-200 p-1">
@@ -151,20 +141,12 @@ export default function Leaderboards({
                   <div className="px-6 pb-6 pt-2 bg-slate-50/50 border-t border-slate-100 animate-in slide-in-from-top-2">
                     <div className="grid md:grid-cols-2 gap-6">
                       
-                      {/* Manual Adjusters */}
+                      {/* Manual Adjuster - Teammate Votes only. Wins come strictly from the
+                          schedule (match scores, mini-game awards) with no direct override. */}
                       <div className="space-y-4">
                         <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
-                          <Plus className="w-3 h-3"/> Adjust Scores
+                          <Plus className="w-3 h-3"/> Adjust Teammate Votes
                         </h4>
-                        
-                        <div className="flex items-center justify-between bg-white p-3 rounded-lg border border-slate-200">
-                          <span className="text-sm font-semibold text-slate-700 flex items-center gap-2"><Trophy className="w-4 h-4 text-amber-500"/> Wins</span>
-                          <div className="flex items-center gap-3">
-                            <button onClick={() => onUpdateWins(player.id, -1)} className="p-1 hover:bg-red-100 text-red-600 rounded transition"><Minus className="w-4 h-4"/></button>
-                            <span className="font-bold w-6 text-center">{playerWins}</span>
-                            <button onClick={() => onUpdateWins(player.id, 1)} className="p-1 hover:bg-emerald-100 text-emerald-600 rounded transition"><Plus className="w-4 h-4"/></button>
-                          </div>
-                        </div>
 
                         <div className="flex items-center justify-between bg-white p-3 rounded-lg border border-slate-200">
                           <span className="text-sm font-semibold text-slate-700 flex items-center gap-2"><Star className="w-4 h-4 text-indigo-500"/> Teammate Votes</span>
@@ -174,6 +156,12 @@ export default function Leaderboards({
                             <button onClick={() => onUpdateTeammatePoints(player.id, 1)} className="p-1 hover:bg-emerald-100 text-emerald-600 rounded transition"><Plus className="w-4 h-4"/></button>
                           </div>
                         </div>
+
+                        {activeTab === 'wins' && (
+                          <p className="text-xs text-slate-400 italic px-1">
+                            Wins are calculated automatically from match scores and mini-game awards using each team's current roster - move a player between teams and this updates on its own.
+                          </p>
+                        )}
                       </div>
 
                       {/* Win History Audit Log */}

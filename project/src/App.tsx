@@ -139,7 +139,7 @@ export default function App() {
   }, [activeClass, sortedUnits, route, studentUnitId]);
 
   const { logs = {}, gradebook = {}, quarterHistory = {}, floorGrid = {}, roster = [] } = activeClass || {};
-  const { unit, schedule, syllabus, wins, teammatePoints } = activeUnitData || { unit: {} as Unit, schedule: {} as ScheduleData, syllabus: {} as SyllabusData, wins: {}, teammatePoints: {} };
+  const { unit, schedule, syllabus, teammatePoints } = activeUnitData || { unit: {} as Unit, schedule: {} as ScheduleData, syllabus: {} as SyllabusData, teammatePoints: {} };
 
   const activeDailyLogs = gradebook[attendanceDate] || {};
   const attendance = deriveAttendance(activeDailyLogs);
@@ -257,55 +257,12 @@ export default function App() {
   const handleBulkAddPlayers = (players: Omit<Player, 'id'>[]) => updateClass((c) => ({ ...c, roster: [...c.roster, ...players.map(p => ({ ...p, id: genPlayerId(c.id) }))] }));
   const handleUpdatePlayer = (id: string, updates: Partial<Player>) => updateClass((c) => ({ ...c, roster: c.roster.map(p => p.id === id ? { ...p, ...updates } : p), units: c.units.map(u => ({ ...u, unit: { ...u.unit, baseTeams: u.unit.baseTeams.map(t => ({ ...t, players: t.players.map(p => p.id === id ? { ...p, ...updates } : p) })) } })) }));
   const handleDeletePlayer = (id: string) => updateClass((c) => ({ ...c, roster: c.roster.filter(p => p.id !== id), units: c.units.map(u => ({ ...u, unit: { ...u.unit, baseTeams: u.unit.baseTeams.map(t => ({ ...t, players: t.players.filter(p => p.id !== id) })) } })) }));
-  const handleUpdatePlayerWins = (playerId: string, delta: number) => updateActiveUnit(u => {
-    const nextWins = { ...u.wins };
-    nextWins[playerId] = Math.max(0, (nextWins[playerId] || 0) + delta);
-    return { ...u, wins: nextWins };
-  });
-
   const handleUpdateTeammatePoints = (playerId: string, delta: number) => updateActiveUnit(u => {
     const nextPts = { ...u.teammatePoints };
     nextPts[playerId] = Math.max(0, (nextPts[playerId] || 0) + delta);
     return { ...u, teammatePoints: nextPts };
   });
 
-  // Rebuilds `wins` from scratch using only completed standard/bracket match scores - the one
-  // source of win data that's fully reconstructable. Mini-game "+1 Win" clicks have no separate
-  // history to replay, so this necessarily zeroes those out too.
-  const handleRecalculateWins = () => updateClass((c) => {
-    const u = c.units.find(un => un.id === (c.activeUnitId || c.units[0]?.id));
-    if (!u) return c;
-
-    const resolveMatchTeams = (m: Match) => c.dailyTeams?.[m.date_str]
-      ? c.dailyTeams[m.date_str].teams
-      : (m.team_set_id && m.team_set_id !== 'base'
-          ? u.unit.teamSets?.find(ts => ts.id === m.team_set_id)?.teams
-          : u.unit.baseTeams);
-    const resolveTeamRoster = (m: Match, teamName: string) => resolveMatchTeams(m)?.find((t) => t.name === teamName);
-
-    const nextWins: Record<string, number> = {};
-    const nextMatches = u.schedule.matches.map((m) => {
-      if (m.match_type === 'minigame') {
-        const teams = resolveMatchTeams(m);
-        Object.entries(m.awardedTeamCounts || {}).forEach(([teamIdStr, count]) => {
-          if (!count) return;
-          const team = teams?.find(t => t.id === Number(teamIdStr));
-          team?.players.forEach((p) => { nextWins[p.id] = (nextWins[p.id] ?? 0) + count; });
-        });
-        return m;
-      }
-      if (!(m.completed && m.home_score !== null && m.away_score !== null)) {
-        return { ...m, winnerCredited: null };
-      }
-      const winnerName = m.home_score > m.away_score ? m.home_team : m.away_score > m.home_score ? m.away_team : null;
-      if (winnerName) {
-        resolveTeamRoster(m, winnerName)?.players.forEach((p) => { nextWins[p.id] = (nextWins[p.id] ?? 0) + 1; });
-      }
-      return { ...m, winnerCredited: winnerName };
-    });
-
-    return { ...c, units: c.units.map(un => un.id === u.id ? { ...u, wins: nextWins, schedule: { ...u.schedule, matches: nextMatches } } : un) };
-  });
   const handleGenerateTeams = (teams: Team[], teamSetName?: string) => updateActiveUnit((u) => {
     if (teamSetName) {
       const existingSetIndex = u.unit.teamSets?.findIndex(ts => ts.name.toLowerCase() === teamSetName.toLowerCase());
@@ -422,51 +379,19 @@ export default function App() {
     return { ...c, dailyTeams: { ...c.dailyTeams, [dateStr]: { ...snap, teams } } };
   });
 
-  const handleUpdateScore = (matchId: number, side: 'home' | 'away', value: number | null) => updateClass((c) => {
-    const u = c.units.find(un => un.id === (c.activeUnitId || c.units[0]?.id));
-    if (!u) return c;
+  // Just persists the score. Who that credits is never stored - Leaderboards computes wins
+  // fresh from the schedule + current team rosters every time (see computeWinsFromSchedule),
+  // so there's nothing here to keep in sync.
+  const handleUpdateScore = (matchId: number, side: 'home' | 'away', value: number | null) => updateActiveUnit((u) => {
     const oldMatch = u.schedule.matches.find((m) => m.id === matchId);
-    if (!oldMatch) return c;
-
+    if (!oldMatch) return u;
     const nextHome = side === 'home' ? value : oldMatch.home_score;
     const nextAway = side === 'away' ? value : oldMatch.away_score;
-    const nextCompleted = nextHome !== null && nextAway !== null;
-
-    const newWinnerName = nextCompleted
-      ? (nextHome! > nextAway! ? oldMatch.home_team : nextAway! > nextHome! ? oldMatch.away_team : null)
-      : null;
-    const oldWinnerName = oldMatch.winnerCredited ?? null;
-
     const matches = u.schedule.matches.map((m) => m.id === matchId
-      ? { ...m, home_score: nextHome, away_score: nextAway, completed: nextCompleted, winnerCredited: newWinnerName }
+      ? { ...m, home_score: nextHome, away_score: nextAway, completed: nextHome !== null && nextAway !== null }
       : m
     );
-
-    // Winner hasn't changed (including "still no winner yet") - just persist the score, no re-crediting.
-    if (newWinnerName === oldWinnerName) {
-      return { ...c, units: c.units.map(un => un.id === u.id ? { ...u, schedule: { ...u.schedule, matches } } : un) };
-    }
-
-    // Resolve a team name to that day's actual roster: the Game Day Snapshot if one exists for
-    // this match's date (subs included), otherwise the team-set/base-team template.
-    const resolveTeamRoster = (teamName: string) => {
-      const targetSet = c.dailyTeams?.[oldMatch.date_str]
-        ? c.dailyTeams[oldMatch.date_str].teams
-        : (oldMatch.team_set_id && oldMatch.team_set_id !== 'base'
-            ? u.unit.teamSets?.find(ts => ts.id === oldMatch.team_set_id)?.teams
-            : u.unit.baseTeams);
-      return targetSet?.find((t) => t.name === teamName);
-    };
-
-    const nextWins = { ...u.wins };
-    if (oldWinnerName) {
-      resolveTeamRoster(oldWinnerName)?.players.forEach((p) => { nextWins[p.id] = Math.max(0, (nextWins[p.id] ?? 0) - 1); });
-    }
-    if (newWinnerName) {
-      resolveTeamRoster(newWinnerName)?.players.forEach((p) => { nextWins[p.id] = (nextWins[p.id] ?? 0) + 1; });
-    }
-
-    return { ...c, units: c.units.map(un => un.id === u.id ? { ...u, schedule: { ...u.schedule, matches }, wins: nextWins } : un) };
+    return { ...u, schedule: { ...u.schedule, matches } };
   });
   
   const handleAddMatch = (m: Omit<Match, 'id'>) => updateActiveUnit((u) => ({ ...u, schedule: { ...u.schedule, matches: [...u.schedule.matches, { ...m, id: genMatchId() }] } }));
@@ -479,41 +404,24 @@ export default function App() {
     }
   }));
 
-  const awardTeamWinDelta = (matchId: number, teamId: number, teamSetId: string, dateStr: string | undefined, delta: 1 | -1) => updateClass((c) => {
-    const activeUnit = c.units.find(u => u.id === (c.activeUnitId || c.units[0]?.id));
-    if (!activeUnit) return c;
-    const match = activeUnit.schedule.matches.find(m => m.id === matchId);
-    if (!match) return c;
+  // Persists the award itself on the match - real, recomputable ground truth (like a score is
+  // for a standard match), not a bare counter. Who it credits is computed live off this later,
+  // so moving a player between teams afterward is reflected automatically, with nothing to redo.
+  const awardTeamWinDelta = (matchId: number, teamId: number, delta: 1 | -1) => updateActiveUnit((u) => {
+    const match = u.schedule.matches.find(m => m.id === matchId);
+    if (!match) return u;
+    if (delta === -1 && (match.awardedTeamCounts?.[teamId] || 0) <= 0) return u;
 
-    if (delta === -1 && (match.awardedTeamCounts?.[teamId] || 0) <= 0) return c;
-
-    // Prefer that day's actual Game Day Snapshot roster (subs included) over the master template,
-    // mirroring how handleUpdateScore already attributes standard-match wins.
-    const dailySnapshotTeams = dateStr ? c.dailyTeams?.[dateStr]?.teams : undefined;
-    const teamSet = teamSetId === 'base' ? undefined : activeUnit.unit.teamSets?.find(ts => ts.id === teamSetId);
-    const fallbackTeams = teamSetId === 'base' ? activeUnit.unit.baseTeams : teamSet?.teams;
-    const sourceTeams = dailySnapshotTeams || fallbackTeams;
-    if (!sourceTeams) return c;
-    const team = sourceTeams.find(t => t.id === teamId);
-    if (!team) return c;
-
-    // Credit the same `wins` map standard/bracket matches use, so mini-game wins actually
-    // show up on the Leaderboards page (they previously wrote to an unused player field).
-    const nextWins = { ...activeUnit.wins };
-    team.players.forEach((p) => { nextWins[p.id] = Math.max(0, (nextWins[p.id] ?? 0) + delta); });
-
-    // Persist the award itself on the match - real, recomputable ground truth, not just a bare counter.
-    const nextMatches = activeUnit.schedule.matches.map((m) => {
+    const matches = u.schedule.matches.map((m) => {
       if (m.id !== matchId) return m;
       const nextCounts = { ...(m.awardedTeamCounts || {}) };
       nextCounts[teamId] = Math.max(0, (nextCounts[teamId] || 0) + delta);
       return { ...m, awardedTeamCounts: nextCounts };
     });
-
-    return { ...c, units: c.units.map(u => u.id === activeUnit.id ? { ...u, wins: nextWins, schedule: { ...activeUnit.schedule, matches: nextMatches } } : u) };
+    return { ...u, schedule: { ...u.schedule, matches } };
   });
-  const handleAwardTeamWin = (matchId: number, teamId: number, teamSetId: string, dateStr?: string) => awardTeamWinDelta(matchId, teamId, teamSetId, dateStr, 1);
-  const handleUnawardTeamWin = (matchId: number, teamId: number, teamSetId: string, dateStr?: string) => awardTeamWinDelta(matchId, teamId, teamSetId, dateStr, -1);
+  const handleAwardTeamWin = (matchId: number, teamId: number) => awardTeamWinDelta(matchId, teamId, 1);
+  const handleUnawardTeamWin = (matchId: number, teamId: number) => awardTeamWinDelta(matchId, teamId, -1);
 
   const handleToggleMatchComplete = (matchId: number) => updateActiveUnit((u) => ({
     ...u,
@@ -825,13 +733,10 @@ export default function App() {
                 <Leaderboards
                   roster={roster}
                   unit={unit}
-                  wins={wins}
                   teammatePoints={teammatePoints}
                   schedule={schedule}
                   dailyTeams={activeClass.dailyTeams || {}}
-                  onUpdateWins={handleUpdatePlayerWins}
                   onUpdateTeammatePoints={handleUpdateTeammatePoints}
-                  onRecalculateWins={handleRecalculateWins}
                 />
               )
               : <UnitScheduleBuilder key={`builder-${unit.unit_id}`} unitName={unit.unit_name} onUpdateUnitName={handleUpdateUnitName} syllabus={syllabus} schedule={schedule} teamNames={teamNames} teamSets={unit.teamSets} calendar={activeClass.masterCalendar || []} roster={roster} unit={unit} onUpdateSyllabus={handleUpdateSyllabus} onAddMatch={handleAddMatch} onUpdateMatch={handleUpdateMatch} onDeleteMatch={handleDeleteMatch} onGenerateTeams={handleGenerateTeams} onMovePlayer={handleMovePlayer} onDeleteTeamSet={handleDeleteTeamSet} />}

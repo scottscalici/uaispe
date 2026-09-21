@@ -1,4 +1,4 @@
-import type { Match, Standings, StandingRow } from './types';
+import type { Match, Standings, StandingRow, Unit, DailyTeamSnapshot } from './types';
 
 const emptyRow = (): StandingRow => ({
   w: 0,
@@ -79,6 +79,50 @@ export function computeStandings(matches: Match[]): Standings {
   });
 
   return standings;
+}
+
+/**
+ * Player win counts, computed fresh every time from the schedule itself - never stored or
+ * manually adjusted. A match's recorded result (a score, or a mini-game's awardedTeamCounts)
+ * is the only source of truth; who gets credited for it is always today's actual team roster
+ * (that date's Game Day Snapshot if one exists, otherwise the current team-set/base-team
+ * composition). Move a player off a team that's on record as having won, and their credit
+ * disappears the next time this runs - no separate recalculation step needed.
+ */
+export function computeWinsFromSchedule(
+  matches: Match[],
+  unit: Unit,
+  dailyTeams: Record<string, DailyTeamSnapshot>,
+): Record<string, number> {
+  const wins: Record<string, number> = {};
+
+  const resolveTeams = (m: Match) => dailyTeams[m.date_str]
+    ? dailyTeams[m.date_str].teams
+    : (m.team_set_id && m.team_set_id !== 'base'
+        ? unit.teamSets?.find((ts) => ts.id === m.team_set_id)?.teams
+        : unit.baseTeams);
+
+  matches.forEach((m) => {
+    const teams = resolveTeams(m);
+    if (!teams) return;
+
+    if (m.match_type === 'minigame') {
+      Object.entries(m.awardedTeamCounts || {}).forEach(([teamIdStr, count]) => {
+        if (!count) return;
+        const team = teams.find((t) => t.id === Number(teamIdStr));
+        team?.players.forEach((p) => { wins[p.id] = (wins[p.id] ?? 0) + count; });
+      });
+      return;
+    }
+
+    if (!(m.completed && m.home_score !== null && m.away_score !== null)) return;
+    const winnerName = m.home_score > m.away_score ? m.home_team : m.away_score > m.home_score ? m.away_team : null;
+    if (!winnerName) return;
+    const winnerTeam = teams.find((t) => t.name === winnerName);
+    winnerTeam?.players.forEach((p) => { wins[p.id] = (wins[p.id] ?? 0) + 1; });
+  });
+
+  return wins;
 }
 
 export interface RankedRow extends StandingRow {
