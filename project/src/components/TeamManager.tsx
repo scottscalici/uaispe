@@ -142,17 +142,27 @@ export default function TeamManager({
     <div className="space-y-6">
       <style>{`
         @media print {
-          @page { size: landscape; margin: 10mm; }
+          @page { size: landscape; margin: 8mm; }
           body * { visibility: hidden; }
           #printable-team-rosters, #printable-team-rosters * { visibility: visible; }
-          #printable-team-rosters { 
-            position: absolute; left: 0; top: 0; width: 100%; background: white !important; 
+          #printable-team-rosters {
+            position: absolute; left: 0; top: 0; width: 100%; background: white !important;
           }
           .no-print { display: none !important; }
-          .print-grid { display: grid !important; grid-template-columns: repeat(4, 1fr) !important; gap: 12px !important; }
-          .print-card { break-inside: avoid; page-break-inside: avoid; border: 2px solid #cbd5e1 !important; border-radius: 8px !important; background: #ffffff !important; box-shadow: none !important; }
-          .print-header { background: #f1f5f9 !important; color: #0f172a !important; border-bottom: 2px solid #cbd5e1 !important; }
-          .print-text { font-size: 11pt !important; color: #000 !important; }
+          .print-grid {
+            display: grid !important;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)) !important;
+            justify-content: center !important;
+            align-content: flex-start !important;
+            gap: 10px !important;
+          }
+          .print-card { break-inside: avoid; page-break-inside: avoid; border: 2px solid #cbd5e1 !important; border-radius: 8px !important; background: #ffffff !important; box-shadow: none !important; max-width: 300px; margin: 0 auto; width: 100%; }
+          .print-header { background: #f1f5f9 !important; color: #0f172a !important; border-bottom: 2px solid #cbd5e1 !important; flex-direction: column !important; text-align: center; padding: 10px 8px !important; gap: 4px !important; }
+          .print-header > div { flex-direction: column !important; align-items: center !important; }
+          .print-logo { width: 48px !important; height: 48px !important; margin: 0 auto; }
+          .print-text { font-size: 12pt !important; color: #000 !important; }
+          .print-roster-row { justify-content: center !important; }
+          .print-roster-name { font-size: 10.5pt !important; color: #1e293b !important; text-align: center; }
         }
       `}</style>
 
@@ -270,11 +280,11 @@ export default function TeamManager({
                 
                 <div className={`print-header flex items-center justify-between border-b px-4 py-3 text-white ${team.league === 'Competitive' ? 'bg-slate-800' : 'bg-blue-600'}`}>
                   <div className="flex items-center gap-3 w-full">
-                    <img 
-                      src={getLogoUrl(team.name)} 
-                      onError={(e) => e.currentTarget.style.display = 'none'} 
+                    <img
+                      src={getLogoUrl(team.name)}
+                      onError={(e) => e.currentTarget.style.display = 'none'}
                       alt=""
-                      className="w-8 h-8 object-contain drop-shadow-sm bg-white rounded-full p-0.5" 
+                      className="print-logo w-8 h-8 object-contain drop-shadow-sm bg-white rounded-full p-0.5"
                     />
                     
                     {editingTeamId === team.id ? (
@@ -310,7 +320,7 @@ export default function TeamManager({
                       <div
                         key={p.id}
                         onClick={() => handlePlayerClick(p.id, team.id)}
-                        className={`flex items-center justify-between rounded-lg px-3 py-1.5 transition-all ${
+                        className={`print-roster-row flex items-center justify-between rounded-lg px-3 py-1.5 transition-all ${
                           isAdmin ? 'cursor-pointer hover:bg-slate-50' : ''
                         } ${isSelected ? 'bg-blue-50 ring-2 ring-blue-500 ring-inset no-print' : ''} ${isAbsent ? 'opacity-40 grayscale bg-slate-50' : ''}`}
                       >
@@ -322,7 +332,7 @@ export default function TeamManager({
                             }`}
                             title={status || 'unmarked'}
                           />
-                          <span className={`print-text font-semibold truncate ${isSelected ? 'text-blue-700' : 'text-slate-700'} ${isAbsent ? 'line-through' : ''}`}>
+                          <span className={`print-roster-name font-semibold truncate ${isSelected ? 'text-blue-700' : 'text-slate-700'} ${isAbsent ? 'line-through' : ''}`}>
                             {p.name}
                           </span>
                         </div>

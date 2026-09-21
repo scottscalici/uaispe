@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { CalendarDays, Clock, MapPin, BarChart3, History, Users, Plus, Trophy, Lock } from 'lucide-react';
+import { CalendarDays, Clock, MapPin, BarChart3, History, Users, Plus, Trophy, Lock, Printer } from 'lucide-react';
 import type { ScheduleData, Match, Unit } from '../types';
 import { computeStandings, rankStandings } from '../standings';
 
@@ -54,9 +54,94 @@ export default function ScheduleStandings({ unit, schedule, isAdmin, onUpdateSco
     return `https://raw.githubusercontent.com/scottscalici/PE/main/teams/${safeUnit}/${safeTeam}.png`;
   };
 
+  const matchesByDate = useMemo(() => {
+    const grouped: Record<string, Match[]> = {};
+    sortedAllMatches.forEach(m => {
+      if (!grouped[m.date_str]) grouped[m.date_str] = [];
+      grouped[m.date_str].push(m);
+    });
+    return grouped;
+  }, [sortedAllMatches]);
+
+  const handlePrintSchedule = () => window.print();
+
   return (
     <div className="space-y-8">
-      
+      <style>{`
+        @media print {
+          @page { size: portrait; margin: 12mm; }
+          body * { visibility: hidden; }
+          #printable-schedule, #printable-schedule * { visibility: visible; }
+          #printable-schedule { position: absolute; left: 0; top: 0; width: 100%; background: white !important; }
+          .sched-no-print { display: none !important; }
+          .sched-day { break-inside: avoid; page-break-inside: avoid; margin-bottom: 14px; }
+          .sched-date-header { background: #1e293b !important; color: #fff !important; font-weight: 900; padding: 6px 10px; border-radius: 6px; font-size: 11pt; margin-bottom: 6px; }
+          .sched-row { break-inside: avoid; page-break-inside: avoid; display: flex !important; align-items: center; justify-content: space-between; border: 1px solid #cbd5e1 !important; border-radius: 6px; padding: 8px 12px; margin-bottom: 6px; }
+          .sched-team { display: flex !important; align-items: center; gap: 8px; font-weight: 700; font-size: 11pt; color: #000 !important; flex: 1; }
+          .sched-team.away { justify-content: flex-end; text-align: right; }
+          .sched-logo { width: 22px !important; height: 22px !important; object-fit: contain; }
+          .sched-meta { font-size: 9pt; color: #334155 !important; white-space: nowrap; padding: 0 10px; text-align: center; }
+          .sched-vs { font-weight: 900; font-size: 10pt; color: #64748b !important; padding: 0 10px; }
+        }
+      `}</style>
+
+      <div className="flex justify-end sched-no-print">
+        <button onClick={handlePrintSchedule} className="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white shadow-sm hover:bg-blue-700 transition">
+          <Printer className="h-4 w-4" /> Print Schedule
+        </button>
+      </div>
+
+      {/* Print-only clean schedule list, covers the full season chronologically */}
+      <div id="printable-schedule" className="hidden print:block">
+        <h1 className="text-2xl font-black text-center mb-6">{unit.unit_name} — Season Schedule</h1>
+        {Object.keys(matchesByDate).sort().map(date => (
+          <div key={date} className="sched-day">
+            <div className="sched-date-header">{new Date(date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</div>
+            {matchesByDate[date].map(m => {
+              if (m.match_type === 'minigame') {
+                const isBase = !m.team_set_id || m.team_set_id === 'base';
+                const displayTeams = isBase ? unit.baseTeams : unit.teamSets?.find(ts => ts.id === m.team_set_id)?.teams;
+                return (
+                  <div key={m.id} className="sched-row">
+                    <div className="sched-meta" style={{ textAlign: 'left', flex: '0 0 auto' }}>{m.time} • {m.location}</div>
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', flex: 1, justifyContent: 'center' }}>
+                      {displayTeams?.map(t => (
+                        <span key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700, fontSize: '10pt' }}>
+                          <img src={getLogoUrl(t.name)} onError={e => e.currentTarget.style.display = 'none'} className="sched-logo" alt="" /> {t.name}
+                        </span>
+                      ))}
+                      {!displayTeams && <span>Mini-Games</span>}
+                    </div>
+                  </div>
+                );
+              }
+              return (
+                <div key={m.id} className="sched-row">
+                  <div className="sched-team">
+                    {m.home_team !== 'TBD' && <img src={getLogoUrl(m.home_team)} onError={e => e.currentTarget.style.display = 'none'} className="sched-logo" alt="" />}
+                    {m.home_team}
+                  </div>
+                  <div className="sched-meta">
+                    {m.match_type === 'bracket' && <div style={{ fontWeight: 800 }}>{m.round_name}</div>}
+                    {m.time} • {m.location}
+                    {m.completed && m.home_score !== null && m.away_score !== null && (
+                      <div style={{ fontWeight: 900 }}>{m.home_score} - {m.away_score}</div>
+                    )}
+                  </div>
+                  <div className="sched-team away">
+                    {m.away_team}
+                    {m.away_team !== 'TBD' && <img src={getLogoUrl(m.away_team)} onError={e => e.currentTarget.style.display = 'none'} className="sched-logo" alt="" />}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+        {Object.keys(matchesByDate).length === 0 && (
+          <p className="text-center text-slate-400">No events scheduled yet.</p>
+        )}
+      </div>
+
       {bracketMatches.length > 0 && (
         <div className="overflow-hidden rounded-xl border border-amber-200 bg-white shadow-sm">
           <div className="flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-3 text-amber-900">
