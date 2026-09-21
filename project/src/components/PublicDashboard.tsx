@@ -96,7 +96,8 @@ export default function PublicDashboard({ unit, schedule }: Props) {
       }
     });
 
-    return { player: foundPlayer, team: baseTeam, timeline: playerTimeline };
+    // Most recent event first (sortedAllMatches builds this oldest-to-newest).
+    return { player: foundPlayer, team: baseTeam, timeline: [...playerTimeline].reverse() };
   }, [searchQuery, unit, sortedAllMatches]);
 
   const { activeSchedule, archivedSchedule } = useMemo(() => {

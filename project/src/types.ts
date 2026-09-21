@@ -11,7 +11,6 @@ export interface Player {
   grade?: string;
   availability?: 'active' | 'injured' | 'out';
   scheduledAbsences?: { id: string; date: string; reason: string }[];
-  lifetimeWins?: number;
   teammateVotes?: number;
 }
 
@@ -78,7 +77,10 @@ export interface Match {
   time: string;
   location: string;
   completed: boolean;
-  round_name?: string; 
+  round_name?: string;
+  /** Name of the team whose roster was last credited a win for this match, so
+   *  re-editing a score (fixing a typo, clearing a field) never double-counts. */
+  winnerCredited?: string | null;
 }
 
 export interface StandingRow {
