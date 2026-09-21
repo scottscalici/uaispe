@@ -23,7 +23,7 @@ import WorkoutPlayer from './components/WorkoutPlayer';
 import MasterCalendarBuilder from './components/MasterCalendarBuilder';
 import DailyPlanner from './components/DailyPlanner';
 
-type AdminView = 'teams' | 'schedule' | 'attendance' | 'grades' | 'roster' | 'calendar'| 'builder' | 'planner' | 'leaderboards';
+type AdminView = 'teams' | 'schedule' | 'attendance' | 'roster' | 'calendar' | 'builder' | 'leaderboards';
 type PublicView = 'syllabus' | 'dashboard' | 'leaderboards' | 'workout';
 
 const allPlayerIds = (c: ClassData): string[] => c.roster?.map((p) => p.id) || [];
@@ -54,6 +54,8 @@ export default function App() {
   const [previewFromAdmin, setPreviewFromAdmin] = useState(false);
 
   const [adminView, setAdminView] = useState<AdminView>('teams');
+  const [logsSubTab, setLogsSubTab] = useState<'daily' | 'exceptions'>('daily');
+  const [calendarSubTab, setCalendarSubTab] = useState<'calendar' | 'planner'>('calendar');
   const [publicView, setPublicView] = useState<PublicView>('syllabus');
   const [classes, setClasses] = useState<ClassData[]>(initialClasses);
   const [activeClassId, setActiveClassId] = useState<string>(initialClasses[0].id);
@@ -637,11 +639,9 @@ export default function App() {
               <NavButton active={adminView === 'teams'} onClick={() => setAdminView('teams')} icon={<Users className="h-4 w-4" />}>Teams</NavButton>
               <NavButton active={adminView === 'schedule'} onClick={() => setAdminView('schedule')} icon={<CalendarDays className="h-4 w-4" />}>Scores</NavButton>
               <NavButton active={adminView === 'attendance'} onClick={() => setAdminView('attendance')} icon={<ClipboardCheck className="h-4 w-4" />}>Logs</NavButton>
-              <NavButton active={adminView === 'grades'} onClick={() => setAdminView('grades')} icon={<FileSpreadsheet className="h-4 w-4" />}>Grades</NavButton>
               <NavButton active={adminView === 'roster'} onClick={() => setAdminView('roster')} icon={<ClipboardList className="h-4 w-4" />}>Roster</NavButton>
               <NavButton active={adminView === 'builder'} onClick={() => setAdminView('builder')} icon={<Grid3x3 className="h-4 w-4" />}>Builder</NavButton>
               <NavButton active={adminView === 'calendar'} onClick={() => setAdminView('calendar')} icon={<CalendarDays className="h-4 w-4" />}>Calendar</NavButton>
-              <NavButton active={adminView === 'planner'} onClick={() => setAdminView('planner')} icon={<ListTodo className="h-4 w-4" />}>Planner</NavButton>
               <NavButton active={adminView === 'leaderboards'} onClick={() => setAdminView('leaderboards')} icon={<Star className="h-4 w-4" />}>Leaderboards</NavButton>
             </nav>
           ) : (
@@ -701,33 +701,73 @@ export default function App() {
               : adminView === 'schedule' ? <ScheduleStandings key={`sched-${unit.unit_id}`} unit={unit} schedule={schedule} isAdmin={true} onUpdateScore={handleUpdateScore} onAwardTeamWin={handleAwardTeamWin} onToggleMatchComplete={handleToggleMatchComplete} />
               : adminView === 'attendance' ? (
                   <div className="space-y-4">
-                    <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-3">
-                       <h3 className="font-bold text-slate-800 flex items-center gap-2 text-lg"><CalendarDays className="w-5 h-5 text-blue-600"/> Cumulative Gradebook Date</h3>
-                       <div className="flex items-center gap-2">
-                         <span className="text-sm font-semibold text-slate-500">Viewing Log For:</span>
-                         <input type="date" value={attendanceDate} onChange={(e) => setAttendanceDate(e.target.value)} className="border border-slate-300 rounded-lg px-3 py-2 font-bold text-slate-700 outline-none focus:border-blue-500 shadow-sm" />
-                       </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setLogsSubTab('daily')}
+                        className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${logsSubTab === 'daily' ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                      >
+                        <ClipboardCheck className="h-4 w-4" /> Daily Log
+                      </button>
+                      <button
+                        onClick={() => setLogsSubTab('exceptions')}
+                        className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${logsSubTab === 'exceptions' ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                      >
+                        <FileSpreadsheet className="h-4 w-4" /> Exceptions Report
+                      </button>
                     </div>
-                    <AttendanceTracker 
-                       key={`att-${unit.unit_id}-${attendanceDate}`} 
-                       roster={roster} 
-                       unit={unit} 
-                       logs={activeDailyLogs} 
-                       quarterHistory={quarterHistory} 
-                       floorGrid={floorGrid}
-                       classMeetsToday={classMeetsToday} 
-                       onUpdateLog={(playerId, log) => handleUpdateGradebookLog(attendanceDate, playerId, log)} 
-                       onQuickSet={(playerId, type) => handleQuickSetGradebook(attendanceDate, playerId, type)} 
-                       onMarkAll={(type) => handleMarkAllGradebook(attendanceDate, type)} 
-                       onUpdatePlayer={handleUpdatePlayer} 
-                       onUpdateFloorGrid={(g) => updateClass((c) => ({ ...c, floorGrid: g }))} 
-                    />
+                    {logsSubTab === 'daily' ? (
+                      <>
+                        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                           <h3 className="font-bold text-slate-800 flex items-center gap-2 text-lg"><CalendarDays className="w-5 h-5 text-blue-600"/> Cumulative Gradebook Date</h3>
+                           <div className="flex items-center gap-2">
+                             <span className="text-sm font-semibold text-slate-500">Viewing Log For:</span>
+                             <input type="date" value={attendanceDate} onChange={(e) => setAttendanceDate(e.target.value)} className="border border-slate-300 rounded-lg px-3 py-2 font-bold text-slate-700 outline-none focus:border-blue-500 shadow-sm" />
+                           </div>
+                        </div>
+                        <AttendanceTracker
+                           key={`att-${unit.unit_id}-${attendanceDate}`}
+                           roster={roster}
+                           unit={unit}
+                           logs={activeDailyLogs}
+                           quarterHistory={quarterHistory}
+                           floorGrid={floorGrid}
+                           classMeetsToday={classMeetsToday}
+                           onUpdateLog={(playerId, log) => handleUpdateGradebookLog(attendanceDate, playerId, log)}
+                           onQuickSet={(playerId, type) => handleQuickSetGradebook(attendanceDate, playerId, type)}
+                           onMarkAll={(type) => handleMarkAllGradebook(attendanceDate, type)}
+                           onUpdatePlayer={handleUpdatePlayer}
+                           onUpdateFloorGrid={(g) => updateClass((c) => ({ ...c, floorGrid: g }))}
+                        />
+                      </>
+                    ) : (
+                      <DailyGrades key={`grades-${unit.unit_id}`} roster={roster} gradebook={gradebook} />
+                    )}
                   </div>
                 )
-              : adminView === 'grades' ? <DailyGrades key={`grades-${unit.unit_id}`} roster={roster} gradebook={gradebook} />
               : adminView === 'roster' ? <RosterManager key={`roster-${activeClassId}`} roster={roster} unit={unit} floorGrid={floorGrid} classId={activeClassId} onAddPlayer={handleAddPlayer} onBulkAddPlayers={handleBulkAddPlayers} onUpdatePlayer={handleUpdatePlayer} onDeletePlayer={handleDeletePlayer} onUpdateFloorGrid={(g) => updateClass((c) => ({ ...c, floorGrid: g }))} />
-              : adminView === 'calendar' ? <MasterCalendarBuilder key={`cal-${activeClassId}`} calendar={activeClass.masterCalendar || []} classId={activeClassId} onSave={(cal) => updateClass(c => ({ ...c, masterCalendar: cal }))} />
-              : adminView === 'planner' ? <DailyPlanner key={`plan-${activeClassId}`} calendar={activeClass.masterCalendar || []} units={activeClass.units || []} onUpdateCalendarDay={(dateStr, updates) => updateClass(c => ({ ...c, masterCalendar: (c.masterCalendar || []).map(day => day.fecha === dateStr ? { ...day, ...updates } : day) }))} />
+              : adminView === 'calendar' ? (
+                  <div className="space-y-4">
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setCalendarSubTab('calendar')}
+                        className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${calendarSubTab === 'calendar' ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                      >
+                        <CalendarDays className="h-4 w-4" /> Semester Calendar
+                      </button>
+                      <button
+                        onClick={() => setCalendarSubTab('planner')}
+                        className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${calendarSubTab === 'planner' ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                      >
+                        <ListTodo className="h-4 w-4" /> Daily Planner
+                      </button>
+                    </div>
+                    {calendarSubTab === 'calendar' ? (
+                      <MasterCalendarBuilder key={`cal-${activeClassId}`} calendar={activeClass.masterCalendar || []} classId={activeClassId} onSave={(cal) => updateClass(c => ({ ...c, masterCalendar: cal }))} />
+                    ) : (
+                      <DailyPlanner key={`plan-${activeClassId}`} calendar={activeClass.masterCalendar || []} units={activeClass.units || []} onUpdateCalendarDay={(dateStr, updates) => updateClass(c => ({ ...c, masterCalendar: (c.masterCalendar || []).map(day => day.fecha === dateStr ? { ...day, ...updates } : day) }))} />
+                    )}
+                  </div>
+                )
               : adminView === 'leaderboards' ? (
                 <Leaderboards
                   roster={roster}
