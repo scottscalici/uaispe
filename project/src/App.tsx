@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Shield, Eye, Users, CalendarDays, LogIn, LogOut, BookOpen, LayoutDashboard,
-  ClipboardCheck, Star, ClipboardList, Wand2, Grid3x3, Trophy, School, Loader2, CloudOff, Cloud, Activity, Plus, Lock, ListTodo, FileSpreadsheet
+  ClipboardCheck, Star, ClipboardList, Grid3x3, Trophy, School, Loader2, CloudOff, Cloud, Activity, Plus, Lock, ListTodo, FileSpreadsheet
 } from 'lucide-react';
 import type {
   ClassData, Unit, ScheduleData, SyllabusData, DailyLogMap, DailyLog, ScoreType,
@@ -17,14 +17,13 @@ import PublicDashboard from './components/PublicDashboard';
 import AttendanceTracker from './components/AttendanceTracker';
 import DailyGrades from './components/DailyGrades';
 import RosterManager from './components/RosterManager';
-import TeamCreator from './components/TeamCreator';
 import UnitScheduleBuilder from './components/UnitScheduleBuilder';
 import Leaderboards from './components/Leaderboards';
 import WorkoutPlayer from './components/WorkoutPlayer';
 import MasterCalendarBuilder from './components/MasterCalendarBuilder';
 import DailyPlanner from './components/DailyPlanner';
 
-type AdminView = 'teams' | 'schedule' | 'attendance' | 'grades' | 'roster' | 'teamcreator' | 'calendar'| 'builder' | 'planner' | 'leaderboards';
+type AdminView = 'teams' | 'schedule' | 'attendance' | 'grades' | 'roster' | 'calendar'| 'builder' | 'planner' | 'leaderboards';
 type PublicView = 'syllabus' | 'dashboard' | 'leaderboards' | 'workout';
 
 const allPlayerIds = (c: ClassData): string[] => c.roster?.map((p) => p.id) || [];
@@ -44,11 +43,15 @@ let playerIdCounter = 1000;
 const genPlayerId = (classId: string) => `${classId}_IMP_${Date.now()}_${playerIdCounter++}`;
 const genMatchId = () => Date.now() + Math.floor(Math.random() * 100000);
 
+const ADMIN_SESSION_KEY = 'pe_admin_authed';
+
 export default function App() {
-  const [route, setRoute] = useState<'student' | 'admin_login' | 'admin'>(
-    window.location.hash === '#admin' ? 'admin_login' : 'student'
-  );
+  const [route, setRoute] = useState<'student' | 'admin_login' | 'admin'>(() => {
+    if (window.location.hash !== '#admin') return 'student';
+    return sessionStorage.getItem(ADMIN_SESSION_KEY) === '1' ? 'admin' : 'admin_login';
+  });
   const [pin, setPin] = useState('');
+  const [previewFromAdmin, setPreviewFromAdmin] = useState(false);
 
   const [adminView, setAdminView] = useState<AdminView>('teams');
   const [publicView, setPublicView] = useState<PublicView>('syllabus');
@@ -557,8 +560,22 @@ export default function App() {
 
   const handleAdminLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (pin === '1234') setRoute('admin');
-    else alert('Incorrect PIN');
+    if (pin === '1234') {
+      sessionStorage.setItem(ADMIN_SESSION_KEY, '1');
+      setRoute('admin');
+    } else alert('Incorrect PIN');
+  };
+
+  const handleAdminLogout = () => {
+    sessionStorage.removeItem(ADMIN_SESSION_KEY);
+    setPin('');
+    setPreviewFromAdmin(false);
+    setRoute('admin_login');
+  };
+
+  const handleExitPreview = () => {
+    setPreviewFromAdmin(false);
+    setRoute('admin');
   };
 
   if (route === 'admin_login') {
@@ -622,22 +639,31 @@ export default function App() {
               <NavButton active={adminView === 'attendance'} onClick={() => setAdminView('attendance')} icon={<ClipboardCheck className="h-4 w-4" />}>Logs</NavButton>
               <NavButton active={adminView === 'grades'} onClick={() => setAdminView('grades')} icon={<FileSpreadsheet className="h-4 w-4" />}>Grades</NavButton>
               <NavButton active={adminView === 'roster'} onClick={() => setAdminView('roster')} icon={<ClipboardList className="h-4 w-4" />}>Roster</NavButton>
-              <NavButton active={adminView === 'teamcreator'} onClick={() => setAdminView('teamcreator')} icon={<Wand2 className="h-4 w-4" />}>Generator</NavButton>
               <NavButton active={adminView === 'builder'} onClick={() => setAdminView('builder')} icon={<Grid3x3 className="h-4 w-4" />}>Builder</NavButton>
               <NavButton active={adminView === 'calendar'} onClick={() => setAdminView('calendar')} icon={<CalendarDays className="h-4 w-4" />}>Calendar</NavButton>
               <NavButton active={adminView === 'planner'} onClick={() => setAdminView('planner')} icon={<ListTodo className="h-4 w-4" />}>Planner</NavButton>
               <NavButton active={adminView === 'leaderboards'} onClick={() => setAdminView('leaderboards')} icon={<Star className="h-4 w-4" />}>Leaderboards</NavButton>
             </nav>
           ) : (
-            <nav className="flex gap-2">
+            <nav className="flex flex-wrap items-center gap-2">
               <NavButton active={publicView === 'syllabus'} onClick={() => setPublicView('syllabus')} icon={<BookOpen className="h-4 w-4" />}>Unit Plan</NavButton>
               <NavButton active={publicView === 'dashboard'} onClick={() => setPublicView('dashboard')} icon={<LayoutDashboard className="h-4 w-4" />}>Teams & Schedule</NavButton>
               <NavButton active={publicView === 'workout'} onClick={() => setPublicView('workout')} icon={<CalendarDays className="h-4 w-4" />}>Daily Log</NavButton>
+              {previewFromAdmin && (
+                <button onClick={handleExitPreview} className="flex items-center gap-1.5 rounded-lg bg-amber-400 px-3 py-1.5 text-sm font-bold text-amber-950 shadow-sm hover:bg-amber-300 transition">
+                  <LogOut className="h-4 w-4" /> Exit Preview → Back to Admin
+                </button>
+              )}
             </nav>
           )}
 
           <div className="ml-auto flex items-center gap-2">
             {route === 'admin' && <SaveStatusIndicator saving={saving} firestoreReady={firestoreReady} loadError={loadError} />}
+            {route === 'admin' && (
+              <button onClick={handleAdminLogout} title="Log out of admin" className="flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-1.5 text-sm font-bold text-slate-300 hover:bg-slate-700 hover:text-white transition">
+                <LogOut className="h-4 w-4" /> Log Out
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -669,7 +695,7 @@ export default function App() {
                   onSwapMaster={handleSwap} 
                   onMoveMaster={handleMovePlayer} 
                   onRenameMaster={handleRenameTeam} 
-                  onPreviewStudentView={() => { setRoute('student'); setPublicView('dashboard'); }} 
+                  onPreviewStudentView={() => { setPreviewFromAdmin(true); setRoute('student'); setPublicView('dashboard'); }} 
                 />
               )
               : adminView === 'schedule' ? <ScheduleStandings key={`sched-${unit.unit_id}`} unit={unit} schedule={schedule} isAdmin={true} onUpdateScore={handleUpdateScore} onAwardTeamWin={handleAwardTeamWin} onToggleMatchComplete={handleToggleMatchComplete} />
@@ -700,7 +726,6 @@ export default function App() {
                 )
               : adminView === 'grades' ? <DailyGrades key={`grades-${unit.unit_id}`} roster={roster} gradebook={gradebook} />
               : adminView === 'roster' ? <RosterManager key={`roster-${activeClassId}`} roster={roster} unit={unit} floorGrid={floorGrid} classId={activeClassId} onAddPlayer={handleAddPlayer} onBulkAddPlayers={handleBulkAddPlayers} onUpdatePlayer={handleUpdatePlayer} onDeletePlayer={handleDeletePlayer} onUpdateFloorGrid={(g) => updateClass((c) => ({ ...c, floorGrid: g }))} />
-              : adminView === 'teamcreator' ? <TeamCreator key={`tc-${unit.unit_id}`} roster={roster} unit={unit} onGenerate={handleGenerateTeams} onMovePlayer={handleMovePlayer} onDeleteTeamSet={handleDeleteTeamSet} />
               : adminView === 'calendar' ? <MasterCalendarBuilder key={`cal-${activeClassId}`} calendar={activeClass.masterCalendar || []} classId={activeClassId} onSave={(cal) => updateClass(c => ({ ...c, masterCalendar: cal }))} />
               : adminView === 'planner' ? <DailyPlanner key={`plan-${activeClassId}`} calendar={activeClass.masterCalendar || []} units={activeClass.units || []} onUpdateCalendarDay={(dateStr, updates) => updateClass(c => ({ ...c, masterCalendar: (c.masterCalendar || []).map(day => day.fecha === dateStr ? { ...day, ...updates } : day) }))} />
               : adminView === 'leaderboards' ? (
@@ -715,7 +740,7 @@ export default function App() {
                   onUpdateTeammatePoints={handleUpdateTeammatePoints}
                 />
               )
-              : <UnitScheduleBuilder key={`builder-${unit.unit_id}`} unitName={unit.unit_name} onUpdateUnitName={handleUpdateUnitName} syllabus={syllabus} schedule={schedule} teamNames={teamNames} teamSets={unit.teamSets} calendar={activeClass.masterCalendar || []} onUpdateSyllabus={handleUpdateSyllabus} onAddMatch={handleAddMatch} onUpdateMatch={handleUpdateMatch} onDeleteMatch={handleDeleteMatch} />}
+              : <UnitScheduleBuilder key={`builder-${unit.unit_id}`} unitName={unit.unit_name} onUpdateUnitName={handleUpdateUnitName} syllabus={syllabus} schedule={schedule} teamNames={teamNames} teamSets={unit.teamSets} calendar={activeClass.masterCalendar || []} roster={roster} unit={unit} onUpdateSyllabus={handleUpdateSyllabus} onAddMatch={handleAddMatch} onUpdateMatch={handleUpdateMatch} onDeleteMatch={handleDeleteMatch} onGenerateTeams={handleGenerateTeams} onMovePlayer={handleMovePlayer} onDeleteTeamSet={handleDeleteTeamSet} />}
 
               {adminView === 'builder' && (
                 <div className="mt-16 border-t border-red-200 pt-8 pb-8">

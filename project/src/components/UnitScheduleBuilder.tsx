@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
-import { Plus, Trash2, BookOpen, CalendarPlus, Save, Swords, Users, Trophy, Pencil, X } from 'lucide-react';
-import type { SyllabusData, ScheduleData, Match, CalendarDay, MatchType, TeamSet } from '../types';
+import { Plus, Trash2, BookOpen, CalendarPlus, Save, Swords, Users, Trophy, Pencil, X, Wand2 } from 'lucide-react';
+import type { SyllabusData, ScheduleData, Match, CalendarDay, MatchType, TeamSet, Unit, Player, Team } from '../types';
+import TeamCreator from './TeamCreator';
 
 interface Props {
   unitName: string;
@@ -9,11 +10,16 @@ interface Props {
   teamNames: string[];
   teamSets?: TeamSet[];
   calendar: CalendarDay[];
+  roster: Player[];
+  unit: Unit;
   onUpdateUnitName: (name: string) => void;
   onUpdateSyllabus: (s: SyllabusData) => void;
   onAddMatch: (m: Omit<Match, 'id'>) => void;
   onUpdateMatch: (id: number, m: Partial<Match>) => void;
   onDeleteMatch: (id: number) => void;
+  onGenerateTeams: (teams: Team[], teamSetName?: string) => void;
+  onMovePlayer: (playerId: string, fromTeamId: number, toTeamId: number) => void;
+  onDeleteTeamSet: (teamSetId: string) => void;
 }
 
 export default function UnitScheduleBuilder({
@@ -23,20 +29,25 @@ export default function UnitScheduleBuilder({
   teamNames,
   teamSets = [],
   calendar,
+  roster,
+  unit,
   onUpdateUnitName,
   onUpdateSyllabus,
   onAddMatch,
   onUpdateMatch,
   onDeleteMatch,
+  onGenerateTeams,
+  onMovePlayer,
+  onDeleteTeamSet,
 }: Props) {
-  const [tab, setTab] = useState<'unit' | 'schedule'>('unit');
+  const [tab, setTab] = useState<'unit' | 'generator' | 'schedule'>('unit');
 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold text-slate-900">Unit & Schedule Builder</h2>
-          <p className="text-sm text-slate-500">Edit the unit plan and build the class schedule</p>
+          <p className="text-sm text-slate-500">Edit the unit plan, generate teams, and build the class schedule</p>
         </div>
         <div className="flex gap-2">
           <button
@@ -44,6 +55,12 @@ export default function UnitScheduleBuilder({
             className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${tab === 'unit' ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}
           >
             <BookOpen className="h-4 w-4" /> Unit Plan
+          </button>
+          <button
+            onClick={() => setTab('generator')}
+            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${tab === 'generator' ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+          >
+            <Wand2 className="h-4 w-4" /> Generator
           </button>
           <button
             onClick={() => setTab('schedule')}
@@ -55,12 +72,14 @@ export default function UnitScheduleBuilder({
       </div>
 
       {tab === 'unit' ? (
-        <UnitPlanEditor 
-          unitName={unitName} 
-          onUpdateUnitName={onUpdateUnitName} 
-          syllabus={syllabus} 
-          onSave={onUpdateSyllabus} 
+        <UnitPlanEditor
+          unitName={unitName}
+          onUpdateUnitName={onUpdateUnitName}
+          syllabus={syllabus}
+          onSave={onUpdateSyllabus}
         />
+      ) : tab === 'generator' ? (
+        <TeamCreator roster={roster} unit={unit} onGenerate={onGenerateTeams} onMovePlayer={onMovePlayer} onDeleteTeamSet={onDeleteTeamSet} />
       ) : (
         <ScheduleEditor schedule={schedule} teamNames={teamNames} teamSets={teamSets} calendar={calendar} onAddMatch={onAddMatch} onUpdateMatch={onUpdateMatch} onDeleteMatch={onDeleteMatch} />
       )}
