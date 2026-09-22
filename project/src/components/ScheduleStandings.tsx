@@ -1,19 +1,29 @@
-import { useMemo } from 'react';
-import { CalendarDays, Clock, MapPin, BarChart3, History, Users, Plus, Minus, Trophy, Lock, Printer } from 'lucide-react';
-import type { ScheduleData, Match, Unit } from '../types';
-import { computeStandings, rankStandings } from '../standings';
+import { useMemo, useState } from 'react';
+import { CalendarDays, Clock, MapPin, BarChart3, Users, Plus, Minus, Trophy, Lock, Unlock, Printer, User } from 'lucide-react';
+import type { ScheduleData, Match, Unit, DailyTeamSnapshot, Player } from '../types';
+import { computeStandings, rankStandings, groupMatchesBySet } from '../standings';
+
+const SOLO_GROUP_ID = '__solo__';
 
 interface Props {
   unit: Unit;
   schedule: ScheduleData;
+  roster: Player[];
+  dailyTeams: Record<string, DailyTeamSnapshot>;
   isAdmin: boolean;
   onUpdateScore: (matchId: number, side: 'home' | 'away', value: number | null) => void;
   onAwardTeamWin: (matchId: number, teamId: number) => void;
   onUnawardTeamWin: (matchId: number, teamId: number) => void;
   onToggleMatchComplete: (matchId: number) => void;
+  onArchiveGroup: (groupId: string) => void;
+  onUnarchiveGroup: (groupId: string) => void;
 }
 
-export default function ScheduleStandings({ unit, schedule, isAdmin, onUpdateScore, onAwardTeamWin, onUnawardTeamWin, onToggleMatchComplete }: Props) {
+export default function ScheduleStandings({
+  unit, schedule, roster, dailyTeams, isAdmin,
+  onUpdateScore, onAwardTeamWin, onUnawardTeamWin, onToggleMatchComplete,
+  onArchiveGroup, onUnarchiveGroup,
+}: Props) {
   // NEW: Guarantee all matches are sorted perfectly by Date and Time
   const sortedAllMatches = useMemo(() => {
     return [...schedule.matches].sort((a, b) => {
@@ -22,34 +32,44 @@ export default function ScheduleStandings({ unit, schedule, isAdmin, onUpdateSco
     });
   }, [schedule.matches]);
 
-  const standardMatches = useMemo(() => sortedAllMatches.filter(m => m.match_type === 'standard' || !m.match_type), [sortedAllMatches]);
-  const bracketMatches = useMemo(() => sortedAllMatches.filter(m => m.match_type === 'bracket'), [sortedAllMatches]);
-  
+  const soloMatches = useMemo(() => sortedAllMatches.filter(m => m.match_type === 'solo'), [sortedAllMatches]);
+
+  // Each team-set (whichever roster arrangement was actually used) gets its own standings
+  // page, reused across every date it appears on - never split by day.
+  const groups = useMemo(() => groupMatchesBySet(sortedAllMatches, dailyTeams, unit), [sortedAllMatches, dailyTeams, unit]);
+
+  const tabs = useMemo(() => {
+    const list = groups.map(g => ({ id: g.id, label: g.label, count: g.matches.length }));
+    if (soloMatches.length > 0) list.push({ id: SOLO_GROUP_ID, label: 'Individual Events', count: soloMatches.length });
+    return list;
+  }, [groups, soloMatches]);
+
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const activeGroupId = selectedGroupId && tabs.some(t => t.id === selectedGroupId) ? selectedGroupId : (tabs[0]?.id ?? null);
+
+  const activeGroup = groups.find(g => g.id === activeGroupId);
+  const isSoloView = activeGroupId === SOLO_GROUP_ID;
+  const isArchived = !!(activeGroupId && activeGroupId !== SOLO_GROUP_ID && unit.archivedTeamSetIds?.includes(activeGroupId));
+
+  const groupMatches = isSoloView ? soloMatches : (activeGroup?.matches ?? []);
+  const standardMatches = useMemo(() => groupMatches.filter(m => m.match_type === 'standard' || !m.match_type), [groupMatches]);
+  const bracketMatches = useMemo(() => groupMatches.filter(m => m.match_type === 'bracket'), [groupMatches]);
+
   const standings = useMemo(() => computeStandings(standardMatches), [standardMatches]);
   const ranked = useMemo(() => rankStandings(standings), [standings]);
 
-  const { activeMatches, archivedMatches } = useMemo(() => {
-    const d = new Date();
-    const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-
-    const allDates = Array.from(new Set(sortedAllMatches.map(m => m.date_str)));
-    const pastDates = allDates.filter(date => date < todayStr);
-    const mostRecentPastDate = pastDates.length > 0 ? pastDates[pastDates.length - 1] : null;
-
-    const active: Match[] = [];
-    const archived: Match[] = [];
-
-    sortedAllMatches.forEach(m => {
-      if (m.date_str >= todayStr || m.date_str === mostRecentPastDate) active.push(m);
-      else archived.push(m);
-    });
-
-    return { activeMatches: active, archivedMatches: archived };
-  }, [sortedAllMatches]);
+  const soloRanked = useMemo(() => {
+    if (!isSoloView) return [];
+    const counts: Record<string, number> = {};
+    soloMatches.forEach(m => { if (m.winner_player_id) counts[m.winner_player_id] = (counts[m.winner_player_id] ?? 0) + 1; });
+    return Object.entries(counts)
+      .map(([playerId, wins]) => ({ playerId, name: roster.find(p => p.id === playerId)?.name ?? 'Unknown', wins }))
+      .sort((a, b) => b.wins - a.wins);
+  }, [isSoloView, soloMatches, roster]);
 
   const getLogoUrl = (teamName: string) => {
     if (!teamName || teamName === 'TBD') return '';
-    const normalize = (str: string) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    const normalize = (str: string) => str.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
     const safeUnit = normalize(unit.unit_name || 'unknown');
     const safeTeam = normalize(teamName);
     return `https://raw.githubusercontent.com/scottscalici/PE/main/teams/${safeUnit}/${safeTeam}.png`;
@@ -65,6 +85,13 @@ export default function ScheduleStandings({ unit, schedule, isAdmin, onUpdateSco
   }, [sortedAllMatches]);
 
   const handlePrintSchedule = () => window.print();
+
+  const handleArchiveClick = () => {
+    if (!activeGroup) return;
+    if (confirm(`Archive standings for "${activeGroup.label}"? This locks all its matches read-only until you unarchive it.`)) {
+      onArchiveGroup(activeGroup.id);
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -116,6 +143,17 @@ export default function ScheduleStandings({ unit, schedule, isAdmin, onUpdateSco
                   </div>
                 );
               }
+              if (m.match_type === 'solo') {
+                const winnerName = roster.find(p => p.id === m.winner_player_id)?.name ?? m.away_team;
+                return (
+                  <div key={m.id} className="sched-row">
+                    <div className="sched-meta" style={{ textAlign: 'left', flex: '0 0 auto' }}>{m.time} • {m.location}</div>
+                    <div style={{ flex: 1, textAlign: 'center', fontWeight: 700, fontSize: '10pt' }}>
+                      🏆 Individual Event Winner: {winnerName}
+                    </div>
+                  </div>
+                );
+              }
               return (
                 <div key={m.id} className="sched-row">
                   <div className="sched-team">
@@ -143,66 +181,113 @@ export default function ScheduleStandings({ unit, schedule, isAdmin, onUpdateSco
         )}
       </div>
 
-      {bracketMatches.length > 0 && (
-        <div className="overflow-hidden rounded-xl border border-amber-200 bg-white shadow-sm">
-          <div className="flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-3 text-amber-900">
-            <Trophy className="h-5 w-5 text-amber-600" />
-            <h3 className="text-lg font-bold">Championship Bracket</h3>
-          </div>
-          <div className="p-6 overflow-x-auto">
-            <TournamentBracket matches={bracketMatches} getLogoUrl={getLogoUrl} />
-          </div>
+      {tabs.length > 0 && (
+        <div className="flex flex-wrap gap-2 sched-no-print">
+          {tabs.map(t => {
+            const tabArchived = t.id !== SOLO_GROUP_ID && unit.archivedTeamSetIds?.includes(t.id);
+            const active = activeGroupId === t.id;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setSelectedGroupId(t.id)}
+                className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-bold transition ${active ? 'bg-blue-600 text-white shadow-sm' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+              >
+                {t.id === SOLO_GROUP_ID ? <User className="h-4 w-4" /> : tabArchived ? <Lock className="h-3.5 w-3.5" /> : null}
+                {t.label}
+                <span className={`ml-1 rounded-full px-1.5 py-0.5 text-[10px] font-black ${active ? 'bg-white/20' : 'bg-slate-100 text-slate-500'}`}>{t.count}</span>
+              </button>
+            );
+          })}
         </div>
       )}
 
-      <StandingsTable ranked={ranked} getLogoUrl={getLogoUrl} />
+      {tabs.length === 0 && (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500 sched-no-print">
+          No events scheduled yet.
+        </div>
+      )}
 
-      <div>
-        <h3 className="mb-3 text-lg font-semibold text-slate-800">Active Matches & Events</h3>
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {activeMatches.map((m) => (
-            <MatchCard
-              key={m.id}
-              match={m}
-              unit={unit}
-              isAdmin={isAdmin}
-              onUpdateScore={onUpdateScore}
-              onAwardTeamWin={onAwardTeamWin}
-              onUnawardTeamWin={onUnawardTeamWin}
-              onToggleMatchComplete={onToggleMatchComplete}
-            />
-          ))}
-          {activeMatches.length === 0 && (
-            <div className="col-span-full rounded-lg border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
-              No active events scheduled.
-            </div>
+      {activeGroup && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sched-no-print">
+          <div>
+            <h3 className="font-bold text-slate-800">{activeGroup.label}</h3>
+            <p className="text-xs text-slate-500">
+              {activeGroup.firstDate === activeGroup.lastDate ? activeGroup.firstDate : `${activeGroup.firstDate} – ${activeGroup.lastDate}`}
+              {isArchived && <span className="ml-2 font-bold text-amber-600">Archived — read only</span>}
+            </p>
+          </div>
+          {isAdmin && (
+            isArchived ? (
+              <button onClick={() => onUnarchiveGroup(activeGroup.id)} className="flex items-center gap-1.5 rounded-lg bg-amber-100 px-3 py-2 text-sm font-bold text-amber-800 hover:bg-amber-200">
+                <Unlock className="h-4 w-4" /> Unarchive
+              </button>
+            ) : (
+              <button onClick={handleArchiveClick} className="flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-200">
+                <Lock className="h-4 w-4" /> Archive These Standings
+              </button>
+            )
           )}
         </div>
-      </div>
-
-      {archivedMatches.length > 0 && (
-        <div className="mt-8 pt-6 border-t border-slate-200">
-          <div className="mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-500">
-            <History className="h-4 w-4" />
-            Archived Past Events
-          </div>
-          <div className="grid grid-cols-1 gap-4 opacity-75 transition-opacity hover:opacity-100 lg:grid-cols-2">
-            {archivedMatches.map((m) => (
-              <MatchCard
-                key={m.id}
-                match={m}
-                unit={unit}
-                isAdmin={isAdmin}
-                onUpdateScore={onUpdateScore}
-                onAwardTeamWin={onAwardTeamWin}
-                onUnawardTeamWin={onUnawardTeamWin}
-                onToggleMatchComplete={onToggleMatchComplete}
-                locked={m.completed}
-              />
-            ))}
-          </div>
-        </div>
       )}
+
+      {isSoloView ? (
+        <>
+          <SoloStandingsTable ranked={soloRanked} />
+          <div>
+            <h3 className="mb-3 text-lg font-semibold text-slate-800">Individual Events</h3>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {soloMatches.map(m => (
+                <SoloMatchCard key={m.id} match={m} roster={roster} />
+              ))}
+              {soloMatches.length === 0 && (
+                <div className="col-span-full rounded-lg border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
+                  No individual events yet.
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      ) : activeGroup ? (
+        <>
+          {bracketMatches.length > 0 && (
+            <div className="overflow-hidden rounded-xl border border-amber-200 bg-white shadow-sm">
+              <div className="flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-3 text-amber-900">
+                <Trophy className="h-5 w-5 text-amber-600" />
+                <h3 className="text-lg font-bold">Championship Bracket</h3>
+              </div>
+              <div className="p-6 overflow-x-auto">
+                <TournamentBracket matches={bracketMatches} getLogoUrl={getLogoUrl} />
+              </div>
+            </div>
+          )}
+
+          <StandingsTable ranked={ranked} getLogoUrl={getLogoUrl} />
+
+          <div>
+            <h3 className="mb-3 text-lg font-semibold text-slate-800">Events</h3>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {groupMatches.map((m) => (
+                <MatchCard
+                  key={m.id}
+                  match={m}
+                  unit={unit}
+                  isAdmin={isAdmin}
+                  onUpdateScore={onUpdateScore}
+                  onAwardTeamWin={onAwardTeamWin}
+                  onUnawardTeamWin={onUnawardTeamWin}
+                  onToggleMatchComplete={onToggleMatchComplete}
+                  locked={isArchived || m.completed}
+                />
+              ))}
+              {groupMatches.length === 0 && (
+                <div className="col-span-full rounded-lg border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
+                  No events in this group yet.
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }
@@ -256,7 +341,7 @@ function StandingsTable({ ranked, getLogoUrl }: { ranked: ReturnType<typeof rank
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-700 px-4 py-3 text-white">
         <BarChart3 className="h-5 w-5" />
-        <h3 className="text-lg font-semibold">Tournament Standings</h3>
+        <h3 className="text-lg font-semibold">Standings</h3>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-center text-sm">
@@ -284,8 +369,65 @@ function StandingsTable({ ranked, getLogoUrl }: { ranked: ReturnType<typeof rank
                 <td className="px-3 py-2 font-black text-blue-600">{r.pts}</td>
               </tr>
             ))}
+            {ranked.length === 0 && (
+              <tr><td colSpan={6} className="px-3 py-6 text-slate-400">No standard matches recorded yet.</td></tr>
+            )}
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+}
+
+function SoloStandingsTable({ ranked }: { ranked: { playerId: string; name: string; wins: number }[] }) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-700 px-4 py-3 text-white">
+        <Trophy className="h-5 w-5" />
+        <h3 className="text-lg font-semibold">Individual Event Standings</h3>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-center text-sm">
+          <thead className="bg-slate-100 text-xs uppercase text-slate-600">
+            <tr>
+              <th className="px-3 py-2 text-left">Rank</th>
+              <th className="px-3 py-2 text-left">Student</th>
+              <th className="px-3 py-2">Wins</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {ranked.map((r, i) => (
+              <tr key={r.playerId} className="hover:bg-slate-50">
+                <td className="px-3 py-2 font-bold text-slate-500">{i + 1}</td>
+                <td className="px-3 py-2 text-left font-semibold text-slate-800">{r.name}</td>
+                <td className="px-3 py-2 font-black text-blue-600">{r.wins}</td>
+              </tr>
+            ))}
+            {ranked.length === 0 && (
+              <tr><td colSpan={3} className="px-3 py-6 text-slate-400">No individual events recorded yet.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function SoloMatchCard({ match, roster }: { match: Match; roster: Player[] }) {
+  const winnerName = roster.find(p => p.id === match.winner_player_id)?.name ?? match.away_team;
+  return (
+    <div className="rounded-xl border border-purple-300 bg-purple-50/20 p-4 shadow-sm">
+      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-slate-100 pb-3 text-xs text-slate-500">
+        <span className="flex items-center gap-1.5 font-black text-purple-700 uppercase tracking-wider bg-purple-50 px-2 py-1 rounded">
+          <User className="h-4 w-4" /> Individual Event
+        </span>
+        <span className="flex items-center gap-1 font-semibold text-slate-600"><CalendarDays className="h-3.5 w-3.5" /> {match.date_str}</span>
+        <span className="flex items-center gap-1 font-semibold text-slate-600"><Clock className="h-3.5 w-3.5" /> {match.time}</span>
+        <span className="flex items-center gap-1 font-semibold text-slate-600"><MapPin className="h-3.5 w-3.5" /> {match.location}</span>
+      </div>
+      <div className="flex items-center justify-center gap-2 py-2">
+        <Trophy className="h-5 w-5 text-amber-500" />
+        <span className="font-black text-lg text-slate-800">{winnerName}</span>
       </div>
     </div>
   );

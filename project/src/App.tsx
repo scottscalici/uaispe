@@ -285,6 +285,15 @@ export default function App() {
     }
   }));
 
+  const handleArchiveTeamSet = (groupId: string) => updateActiveUnit((u) => ({
+    ...u,
+    unit: { ...u.unit, archivedTeamSetIds: Array.from(new Set([...(u.unit.archivedTeamSetIds || []), groupId])) }
+  }));
+  const handleUnarchiveTeamSet = (groupId: string) => updateActiveUnit((u) => ({
+    ...u,
+    unit: { ...u.unit, archivedTeamSetIds: (u.unit.archivedTeamSetIds || []).filter(id => id !== groupId) }
+  }));
+
   const handleRenameTeam = (teamId: number, newName: string) => updateActiveUnit((u) => ({ ...u, unit: { ...u.unit, baseTeams: u.unit.baseTeams.map((t) => t.id === teamId ? { ...t, name: newName } : t) } }));
   const handleSwap = (p1Id: string, t1Id: number, p2Id: string, t2Id: number) => updateActiveUnit((u) => {
     const teams = u.unit.baseTeams.map((t) => ({ ...t, players: [...t.players] }));
@@ -666,7 +675,7 @@ export default function App() {
                   onPreviewStudentView={() => { setPreviewFromAdmin(true); setRoute('student'); setPublicView('dashboard'); }} 
                 />
               )
-              : adminView === 'schedule' ? <ScheduleStandings key={`sched-${unit.unit_id}`} unit={unit} schedule={schedule} isAdmin={true} onUpdateScore={handleUpdateScore} onAwardTeamWin={handleAwardTeamWin} onUnawardTeamWin={handleUnawardTeamWin} onToggleMatchComplete={handleToggleMatchComplete} />
+              : adminView === 'schedule' ? <ScheduleStandings key={`sched-${unit.unit_id}`} unit={unit} schedule={schedule} roster={roster} dailyTeams={activeClass.dailyTeams || {}} isAdmin={true} onUpdateScore={handleUpdateScore} onAwardTeamWin={handleAwardTeamWin} onUnawardTeamWin={handleUnawardTeamWin} onToggleMatchComplete={handleToggleMatchComplete} onArchiveGroup={handleArchiveTeamSet} onUnarchiveGroup={handleUnarchiveTeamSet} />
               : adminView === 'attendance' ? (
                   <div className="space-y-4">
                     <div className="flex gap-2">
@@ -773,7 +782,7 @@ export default function App() {
                 }} 
               />
           ) : publicView === 'syllabus' ? <UnitSyllabus key={`syl-${unit.unit_id}`} syllabus={syllabus} unitName={unit.unit_name} />
-            : <PublicDashboard key={`pub-${unit.unit_id}`} unit={unit} schedule={schedule} dailySnapshot={activeClass.dailyTeams?.[attendanceDate]} />
+            : <PublicDashboard key={`pub-${unit.unit_id}`} unit={unit} schedule={schedule} dailyTeams={activeClass.dailyTeams || {}} />
           }
         </div>
       )}

@@ -60,17 +60,20 @@ export interface Unit {
   class_id: string;
   has_leagues: boolean;
   baseTeams: Team[];
-  teamSets?: TeamSet[]; 
+  teamSets?: TeamSet[];
+  /** Team-set group ids (see resolveMatchGroupId in standings.ts) whose standings have
+   *  been explicitly closed out by the admin - locked read-only until unarchived. */
+  archivedTeamSetIds?: string[];
 }
 
-export type MatchType = 'standard' | 'minigame' | 'bracket';
+export type MatchType = 'standard' | 'minigame' | 'bracket' | 'solo';
 
 export interface Match {
   id: number;
-  match_type?: MatchType; 
-  team_set_id?: string; 
-  home_team: string; 
-  away_team: string; 
+  match_type?: MatchType;
+  team_set_id?: string;
+  home_team: string;
+  away_team: string;
   home_score: number | null;
   away_score: number | null;
   date_str: string;
@@ -82,6 +85,9 @@ export interface Match {
    *  event - real, recomputable ground truth (like a score is for a standard match),
    *  not a bare counter. */
   awardedTeamCounts?: Record<number, number>;
+  /** Solo events only: the single student credited with the win (e.g. last-one-standing
+   *  dodgeball). Not tied to any team, so it's unaffected by roster changes. */
+  winner_player_id?: string;
 }
 
 export interface StandingRow {

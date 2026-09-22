@@ -41,6 +41,13 @@ export default function Leaderboards({
     const entries: WinHistoryEntry[] = [];
 
     schedule.matches.forEach(m => {
+      if (m.match_type === 'solo') {
+        if (m.winner_player_id === playerId) {
+          entries.push({ match: m, label: 'Solo Event Win' });
+        }
+        return;
+      }
+
       const resolvedTeams = dailyTeams[m.date_str]
         ? dailyTeams[m.date_str].teams
         : (m.team_set_id && m.team_set_id !== 'base'

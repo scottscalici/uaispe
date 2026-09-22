@@ -1,13 +1,15 @@
 import { useMemo, useState } from 'react';
-import { Search, Calendar, MapPin, Trophy, Users, ShieldAlert, History } from 'lucide-react';
-import type { Unit, ScheduleData, Match } from '../types';
+import { Search, Calendar, MapPin, Trophy, Users, ShieldAlert, History, User } from 'lucide-react';
+import type { Unit, ScheduleData, Match, DailyTeamSnapshot } from '../types';
+import { resolveMatchGroupId } from '../standings';
 
 interface Props {
   unit: Unit;
   schedule: ScheduleData;
+  dailyTeams: Record<string, DailyTeamSnapshot>;
 }
 
-export default function PublicDashboard({ unit, schedule }: Props) {
+export default function PublicDashboard({ unit, schedule, dailyTeams }: Props) {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeRosterId, setActiveRosterId] = useState<string>('base');
 
@@ -18,6 +20,25 @@ export default function PublicDashboard({ unit, schedule }: Props) {
     });
   }, [schedule.matches]);
 
+  const soloMatches = useMemo(() => sortedAllMatches.filter(m => m.match_type === 'solo'), [sortedAllMatches]);
+
+  // Standings are scoped to whichever roster arrangement is selected below (same id space
+  // as the "Select Roster List" picker) so records from different team-sets never mix.
+  const groupMatches = useMemo(
+    () => sortedAllMatches.filter(m => m.match_type !== 'solo' && resolveMatchGroupId(m, dailyTeams) === activeRosterId),
+    [sortedAllMatches, dailyTeams, activeRosterId]
+  );
+
+  const soloRanked = useMemo(() => {
+    const counts: Record<string, { name: string; wins: number }> = {};
+    soloMatches.forEach(m => {
+      if (!m.winner_player_id) return;
+      if (!counts[m.winner_player_id]) counts[m.winner_player_id] = { name: m.away_team, wins: 0 };
+      counts[m.winner_player_id].wins += 1;
+    });
+    return Object.values(counts).sort((a, b) => b.wins - a.wins);
+  }, [soloMatches]);
+
   const getLogoUrl = (teamName: string) => {
     if (!teamName || teamName === 'TBD') return '';
     const normalize = (str: string) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
@@ -26,9 +47,13 @@ export default function PublicDashboard({ unit, schedule }: Props) {
     return `https://raw.githubusercontent.com/scottscalici/PE/main/teams/${safeUnit}/${safeTeam}.png`;
   };
 
+  const activeRosterTeams = activeRosterId === 'base'
+    ? unit.baseTeams
+    : unit.teamSets?.find(ts => ts.id === activeRosterId)?.teams || [];
+
   const sortedTeams = useMemo(() => {
-    const standardMatches = sortedAllMatches.filter(m => m.match_type === 'standard' || !m.match_type);
-    return [...unit.baseTeams].map(t => {
+    const standardMatches = groupMatches.filter(m => m.match_type === 'standard' || !m.match_type);
+    return [...activeRosterTeams].map(t => {
       let w = 0, l = 0, t_ties = 0, pts = 0;
       standardMatches.forEach(m => {
         if (m.completed && m.home_score !== null && m.away_score !== null) {
@@ -46,7 +71,7 @@ export default function PublicDashboard({ unit, schedule }: Props) {
       });
       return { ...t, stats: { w, l, t: t_ties, pts } };
     }).sort((a, b) => b.stats.pts - a.stats.pts);
-  }, [unit, sortedAllMatches]);
+  }, [activeRosterTeams, groupMatches]);
 
   const searchedStudentResult = useMemo(() => {
     if (!searchQuery.trim()) return null;
@@ -69,6 +94,12 @@ export default function PublicDashboard({ unit, schedule }: Props) {
     const playerTimeline: { match: Match, playingAs: string }[] = [];
 
     sortedAllMatches.forEach(m => {
+      if (m.match_type === 'solo') {
+        if (m.winner_player_id === foundPlayer!.id) {
+          playerTimeline.push({ match: m, playingAs: 'Individual Event' });
+        }
+        return;
+      }
       if (m.match_type === 'minigame') {
         // FIX: Look up Custom Teams OR Base Teams
         const isBase = !m.team_set_id || m.team_set_id === 'base';
@@ -124,11 +155,7 @@ export default function PublicDashboard({ unit, schedule }: Props) {
     return { activeSchedule: active, archivedSchedule: archived };
   }, [sortedAllMatches]);
 
-  const activeRosterTeams = activeRosterId === 'base' 
-    ? unit.baseTeams 
-    : unit.teamSets?.find(ts => ts.id === activeRosterId)?.teams || [];
-
-  const bracketMatches = useMemo(() => sortedAllMatches.filter(m => m.match_type === 'bracket'), [sortedAllMatches]);
+  const bracketMatches = useMemo(() => groupMatches.filter(m => m.match_type === 'bracket'), [groupMatches]);
 
   const bracketRounds = useMemo(() => {
     const grouped: Record<string, Match[]> = {};
@@ -195,9 +222,9 @@ export default function PublicDashboard({ unit, schedule }: Props) {
                 <p className="text-xs text-slate-500 italic py-2">No matches scheduled for you yet.</p>
               ) : (
                 searchedStudentResult.timeline.map(({ match: m, playingAs }) => (
-                  <div key={m.id} className={`flex flex-wrap items-center justify-between rounded-lg border p-2.5 text-xs ${m.match_type === 'minigame' ? 'bg-indigo-50 border-indigo-100' : m.match_type === 'bracket' ? 'bg-amber-50 border-amber-100' : 'bg-slate-50 border-slate-100'}`}>
+                  <div key={m.id} className={`flex flex-wrap items-center justify-between rounded-lg border p-2.5 text-xs ${m.match_type === 'minigame' ? 'bg-indigo-50 border-indigo-100' : m.match_type === 'bracket' ? 'bg-amber-50 border-amber-100' : m.match_type === 'solo' ? 'bg-purple-50 border-purple-100' : 'bg-slate-50 border-slate-100'}`}>
                     <div className="flex items-center gap-2 font-bold text-slate-700">
-                      <Calendar className={`h-3.5 w-3.5 ${m.match_type === 'minigame' ? 'text-indigo-500' : m.match_type === 'bracket' ? 'text-amber-500' : 'text-blue-500'}`} /> {m.date_str} @ {m.time}
+                      <Calendar className={`h-3.5 w-3.5 ${m.match_type === 'minigame' ? 'text-indigo-500' : m.match_type === 'bracket' ? 'text-amber-500' : m.match_type === 'solo' ? 'text-purple-500' : 'text-blue-500'}`} /> {m.date_str} @ {m.time}
                     </div>
                     <div className="font-extrabold text-slate-900 flex flex-col items-center">
                       {m.match_type === 'minigame' ? (
@@ -207,10 +234,14 @@ export default function PublicDashboard({ unit, schedule }: Props) {
                             <span className="text-amber-600 text-[10px] uppercase tracking-wider">{m.round_name}</span>
                             <span>{m.home_team} <span className="text-amber-600 font-normal">vs</span> {m.away_team}</span>
                          </div>
+                      ) : m.match_type === 'solo' ? (
+                         <span className="text-purple-600 flex items-center gap-1.5"><Trophy className="w-3.5 h-3.5 text-amber-500"/> Individual Event Win</span>
                       ) : (
                         <span>{m.home_team} <span className="text-blue-600 font-normal">vs</span> {m.away_team}</span>
                       )}
-                      <span className="text-[11px] text-slate-500 font-normal mt-0.5">Playing as: <span className="font-black text-slate-700">{playingAs}</span></span>
+                      {m.match_type !== 'solo' && (
+                        <span className="text-[11px] text-slate-500 font-normal mt-0.5">Playing as: <span className="font-black text-slate-700">{playingAs}</span></span>
+                      )}
                     </div>
                     <div className="flex items-center gap-1 font-semibold text-slate-600 bg-white px-2 py-1 rounded border border-slate-200">
                       <MapPin className="h-3.5 w-3.5 text-red-500" /> {m.location || 'Main Gym'}
@@ -265,9 +296,22 @@ export default function PublicDashboard({ unit, schedule }: Props) {
 
       <details className="group rounded-xl border border-slate-200 bg-white shadow-sm" open={bracketMatches.length === 0}>
         <summary className="flex cursor-pointer items-center justify-between bg-slate-50 p-4 font-bold text-slate-800 list-none rounded-xl group-open:rounded-b-none">
-          <span>🏆 Tournament Standings</span>
+          <span>🏆 Tournament Standings <span className="font-normal text-slate-400">— {activeRosterId === 'base' ? 'Base Teams' : unit.teamSets?.find(ts => ts.id === activeRosterId)?.name}</span></span>
           <span className="text-blue-500 group-open:rotate-180 transition-transform">▼</span>
         </summary>
+        {unit.teamSets && unit.teamSets.length > 0 && (
+          <div className="border-t border-slate-100 p-3 flex flex-col sm:flex-row sm:items-center gap-2 bg-slate-50">
+            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Standings For:</label>
+            <select
+              value={activeRosterId}
+              onChange={e => setActiveRosterId(e.target.value)}
+              className="w-full sm:w-64 rounded-md border border-slate-300 p-2 text-sm font-bold text-blue-700 outline-none focus:border-blue-500 bg-white shadow-sm"
+            >
+              <option value="base">🏆 Default Unit Teams</option>
+              {unit.teamSets.map(ts => <option key={ts.id} value={ts.id}>🔄 {ts.name}</option>)}
+            </select>
+          </div>
+        )}
         <div className="border-t border-slate-100 p-0 overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-slate-500">
@@ -290,10 +334,42 @@ export default function PublicDashboard({ unit, schedule }: Props) {
                   <td className="p-3 font-black text-blue-600">{t.stats.pts}</td>
                 </tr>
               ))}
+              {sortedTeams.length === 0 && (
+                <tr><td colSpan={4} className="p-4 text-center text-slate-400">No teams in this roster list.</td></tr>
+              )}
             </tbody>
           </table>
         </div>
       </details>
+
+      {soloMatches.length > 0 && (
+        <details className="group rounded-xl border border-purple-200 bg-white shadow-sm">
+          <summary className="flex cursor-pointer items-center justify-between bg-purple-50 p-4 font-bold text-purple-900 list-none rounded-xl group-open:rounded-b-none">
+            <span className="flex items-center gap-2"><User className="h-5 w-5 text-purple-600" /> Individual Event Champions</span>
+            <span className="text-purple-500 group-open:rotate-180 transition-transform">▼</span>
+          </summary>
+          <div className="border-t border-purple-100 p-0 overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-50 text-slate-500">
+                <tr>
+                  <th className="p-3 pl-4">Rk</th>
+                  <th className="p-3">Student</th>
+                  <th className="p-3 font-black">Wins</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {soloRanked.map((r, i) => (
+                  <tr key={r.name} className="hover:bg-slate-50">
+                    <td className="p-3 pl-4 font-bold text-slate-500">{i + 1}</td>
+                    <td className="p-3 font-bold text-slate-800">{r.name}</td>
+                    <td className="p-3 font-black text-purple-600">{r.wins}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      )}
 
       <details className="group rounded-xl border border-slate-200 bg-white shadow-sm" open>
         <summary className="flex cursor-pointer items-center justify-between bg-slate-50 p-4 font-bold text-slate-800 list-none rounded-xl group-open:rounded-b-none">
@@ -333,6 +409,24 @@ export default function PublicDashboard({ unit, schedule }: Props) {
                           )) : (
                             <span className="text-slate-400 italic text-sm">Teams not found.</span>
                           )}
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  if (m.match_type === 'solo') {
+                    return (
+                      <div key={m.id} className="flex flex-wrap items-center justify-between gap-3 bg-purple-50/30 border border-purple-200 p-3 rounded-lg shadow-sm">
+                        <div className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+                          <span>🕒 {m.time}</span>
+                          <span>•</span>
+                          <span className="text-purple-600 font-bold flex items-center gap-1"><MapPin className="w-3 h-3"/> {m.location || 'Main Gym'}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-purple-700 bg-purple-100 px-2 py-0.5 rounded font-black uppercase tracking-wider text-xs">
+                          <User className="w-3 h-3" /> Individual Event
+                        </div>
+                        <div className="flex items-center gap-1.5 font-black text-slate-800">
+                          <Trophy className="w-4 h-4 text-amber-500" /> {m.away_team}
                         </div>
                       </div>
                     );
@@ -409,6 +503,24 @@ export default function PublicDashboard({ unit, schedule }: Props) {
                               )) : (
                                 <span className="text-slate-400 italic text-sm">Teams not found.</span>
                               )}
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      if (m.match_type === 'solo') {
+                        return (
+                          <div key={m.id} className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 border border-slate-200 p-3 rounded-lg shadow-sm opacity-80">
+                            <div className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+                              <span>🕒 {m.time}</span>
+                              <span>•</span>
+                              <span className="text-slate-500 font-bold flex items-center gap-1"><MapPin className="w-3 h-3"/> {m.location || 'Main Gym'}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 text-slate-500 bg-slate-200 px-2 py-0.5 rounded font-black uppercase tracking-wider text-xs">
+                              <User className="w-3 h-3" /> Individual Event
+                            </div>
+                            <div className="flex items-center gap-1.5 font-black text-slate-600 grayscale">
+                              <Trophy className="w-4 h-4" /> {m.away_team}
                             </div>
                           </div>
                         );

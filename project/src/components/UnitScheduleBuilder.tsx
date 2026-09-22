@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Plus, Trash2, BookOpen, CalendarPlus, Save, Swords, Users, Trophy, Pencil, X, Wand2 } from 'lucide-react';
+import { Plus, Trash2, BookOpen, CalendarPlus, Save, Swords, Users, Trophy, Pencil, X, Wand2, User } from 'lucide-react';
 import type { SyllabusData, ScheduleData, Match, CalendarDay, MatchType, TeamSet, Unit, Player, Team } from '../types';
 import TeamCreator from './TeamCreator';
 
@@ -81,7 +81,7 @@ export default function UnitScheduleBuilder({
       ) : tab === 'generator' ? (
         <TeamCreator roster={roster} unit={unit} onGenerate={onGenerateTeams} onMovePlayer={onMovePlayer} onDeleteTeamSet={onDeleteTeamSet} />
       ) : (
-        <ScheduleEditor schedule={schedule} teamNames={teamNames} teamSets={teamSets} calendar={calendar} onAddMatch={onAddMatch} onUpdateMatch={onUpdateMatch} onDeleteMatch={onDeleteMatch} />
+        <ScheduleEditor schedule={schedule} teamNames={teamNames} teamSets={teamSets} calendar={calendar} roster={roster} onAddMatch={onAddMatch} onUpdateMatch={onUpdateMatch} onDeleteMatch={onDeleteMatch} />
       )}
     </div>
   );
@@ -260,6 +260,7 @@ function ScheduleEditor({
   teamNames,
   teamSets,
   calendar,
+  roster,
   onAddMatch,
   onUpdateMatch,
   onDeleteMatch,
@@ -268,6 +269,7 @@ function ScheduleEditor({
   teamNames: string[];
   teamSets: TeamSet[];
   calendar: CalendarDay[];
+  roster: Player[];
   onAddMatch: (m: Omit<Match, 'id'>) => void;
   onUpdateMatch: (id: number, m: Partial<Match>) => void;
   onDeleteMatch: (id: number) => void;
@@ -294,8 +296,11 @@ function ScheduleEditor({
 
   const [home, setHome] = useState('');
   const [away, setAway] = useState('');
-  const [teamSetId, setTeamSetId] = useState('base'); 
-  const [roundName, setRoundName] = useState('Quarterfinals'); 
+  const [teamSetId, setTeamSetId] = useState('base');
+  const [roundName, setRoundName] = useState('Quarterfinals');
+  const [soloWinnerId, setSoloWinnerId] = useState('');
+
+  const sortedRoster = useMemo(() => [...roster].sort((a, b) => a.name.localeCompare(b.name)), [roster]);
 
   const [date, setDate] = useState('');
   const [time, setTime] = useState('11:15');
@@ -324,6 +329,8 @@ function ScheduleEditor({
       setHome(m.home_team);
       setAway(m.away_team);
       setRoundName(m.round_name || '');
+    } else if (m.match_type === 'solo') {
+      setSoloWinnerId(m.winner_player_id || '');
     }
   };
 
@@ -332,6 +339,7 @@ function ScheduleEditor({
     setDate('');
     setHome('');
     setAway('');
+    setSoloWinnerId('');
   };
 
   const handleSave = () => {
@@ -359,18 +367,25 @@ function ScheduleEditor({
      } else if (matchType === 'bracket') {
       if (!home || !away || !roundName) return;
       matchData = { ...matchData, team_set_id: standardTeamSetId, home_team: home, away_team: away, round_name: roundName };
+    } else if (matchType === 'solo') {
+      if (!soloWinnerId) return;
+      const winner = roster.find(p => p.id === soloWinnerId);
+      matchData = { ...matchData, home_team: 'Individual Event', away_team: winner?.name || 'Unknown', winner_player_id: soloWinnerId };
     }
+
+    const completed = matchType === 'solo';
 
     if (editingMatchId) {
       onUpdateMatch(editingMatchId, matchData);
       setEditingMatchId(null);
     } else {
-      onAddMatch({ ...matchData, home_score: null, away_score: null, completed: false });
+      onAddMatch({ ...matchData, home_score: null, away_score: null, completed });
     }
     setDate('');
+    setSoloWinnerId('');
   };
 
-  const isFormValid = date && (matchType === 'minigame' ? teamSetId : (home && away));
+  const isFormValid = date && (matchType === 'minigame' ? teamSetId : matchType === 'solo' ? soloWinnerId : (home && away));
 
   return (
     <div className="space-y-4">
@@ -393,11 +408,17 @@ function ScheduleEditor({
             >
               <Users className="w-3.5 h-3.5" /> Mini-Games
             </button>
-            <button 
+            <button
               onClick={() => setMatchType('bracket')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${matchType === 'bracket' ? 'bg-amber-100 text-amber-800 shadow-sm border border-amber-200' : 'text-slate-500 hover:text-slate-700'}`}
             >
               <Trophy className="w-3.5 h-3.5" /> Bracket
+            </button>
+            <button
+              onClick={() => setMatchType('solo')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${matchType === 'solo' ? 'bg-purple-100 text-purple-800 shadow-sm border border-purple-200' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              <User className="w-3.5 h-3.5" /> Solo Event
             </button>
           </div>
         </div>
@@ -452,12 +473,20 @@ function ScheduleEditor({
                 </select>
               </label>
             </>
-          ) : (
+          ) : matchType === 'minigame' ? (
             <label className="block sm:col-span-2">
               <span className="mb-1 block text-xs font-semibold uppercase text-indigo-500">Select Daily Team Set</span>
               <select value={teamSetId} onChange={(e) => setTeamSetId(e.target.value)} className="w-full rounded-md border border-indigo-300 px-3 py-2 text-sm bg-indigo-50 font-semibold text-indigo-900 focus:outline-none focus:ring-1 focus:ring-indigo-500">
                 <option value="base">🏆 Default Unit Teams</option>
                 {teamSets.map((ts) => <option key={ts.id} value={ts.id}>{ts.name} ({ts.teams.length} teams)</option>)}
+              </select>
+            </label>
+          ) : (
+            <label className="block sm:col-span-2">
+              <span className="mb-1 block text-xs font-semibold uppercase text-purple-500">Winning Student</span>
+              <select value={soloWinnerId} onChange={(e) => setSoloWinnerId(e.target.value)} className="w-full rounded-md border border-purple-300 px-3 py-2 text-sm bg-purple-50 font-semibold text-purple-900 focus:outline-none focus:ring-1 focus:ring-purple-500">
+                <option value="" disabled>Select a student...</option>
+                {sortedRoster.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </label>
           )}
@@ -521,7 +550,7 @@ function ScheduleEditor({
           </thead>
           <tbody className="divide-y divide-slate-100">
             {sortedMatches.map((m) => (
-              <tr key={m.id} className={`transition hover:bg-slate-50 ${m.match_type === 'minigame' ? 'bg-indigo-50/30' : m.match_type === 'bracket' ? 'bg-amber-50/30' : ''}`}>
+              <tr key={m.id} className={`transition hover:bg-slate-50 ${m.match_type === 'minigame' ? 'bg-indigo-50/30' : m.match_type === 'bracket' ? 'bg-amber-50/30' : m.match_type === 'solo' ? 'bg-purple-50/30' : ''}`}>
                 <td className="px-4 py-3">{m.date_str}</td>
                 <td className="px-4 py-3 font-semibold text-slate-600">{m.time}</td>
                 <td className="px-4 py-3 font-medium text-slate-800">
@@ -529,6 +558,11 @@ function ScheduleEditor({
                     <div className="flex items-center gap-1.5 text-indigo-700">
                       <Users className="w-4 h-4" />
                       <span>Mini-Games / Relays <span className="text-slate-500 font-normal">({m.away_team})</span></span>
+                    </div>
+                  ) : m.match_type === 'solo' ? (
+                    <div className="flex items-center gap-1.5 text-purple-700">
+                      <User className="w-4 h-4" />
+                      <span>Individual Event <span className="text-slate-500 font-normal">— Winner: {m.away_team}</span></span>
                     </div>
                   ) : m.match_type === 'bracket' ? (
                     <div className="flex flex-col">
