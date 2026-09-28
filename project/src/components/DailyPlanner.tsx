@@ -1,11 +1,13 @@
 import { useState, useMemo, useEffect } from 'react';
-import { CalendarDays, Clock, ListTodo, Target, Plus, Trash2, Link as LinkIcon, ArrowUp, ArrowDown, Printer, MapPin, Users } from 'lucide-react';
-import type { CalendarDay, UnitData, LessonPlanItem, LessonPlan } from '../types';
+import { CalendarDays, Clock, ListTodo, Target, Plus, Trash2, Link as LinkIcon, ArrowUp, ArrowDown, Printer, MapPin, Users, Dumbbell } from 'lucide-react';
+import type { CalendarDay, UnitData, LessonPlanItem, LessonPlan, WorkoutLibrary } from '../types';
 
 interface Props {
   calendar: CalendarDay[];
   units: UnitData[];
+  workoutLibrary: WorkoutLibrary;
   onUpdateCalendarDay: (dateStr: string, updates: Partial<CalendarDay>) => void;
+  onAssignWorkout: (dateStr: string, workoutId: string | null) => void;
 }
 
 const DEFAULT_TIMELINE: LessonPlanItem[] = [
@@ -16,7 +18,7 @@ const DEFAULT_TIMELINE: LessonPlanItem[] = [
   { id: '5', time: '11:50', activity: 'Cool Down & Check Out', details: 'Check posted teams for tomorrow.' }
 ];
 
-export default function DailyPlanner({ calendar, units, onUpdateCalendarDay }: Props) {
+export default function DailyPlanner({ calendar, units, workoutLibrary, onUpdateCalendarDay, onAssignWorkout }: Props) {
   const schoolDays = useMemo(() => calendar.filter(d => d.status === 'school' || d.status === 'half-day'), [calendar]);
   const [selectedDate, setSelectedDate] = useState<string>('');
 
@@ -243,6 +245,24 @@ export default function DailyPlanner({ calendar, units, onUpdateCalendarDay }: P
                 )}
               </div>
             )}
+          </div>
+
+          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+            <div className="flex items-center gap-2 mb-3">
+              <Dumbbell className="h-5 w-5 text-orange-500" />
+              <h3 className="font-bold text-slate-800">Assigned Workout</h3>
+            </div>
+            <select
+              value={activeDay.workoutId || ''}
+              onChange={e => onAssignWorkout(activeDay.fecha, e.target.value || null)}
+              className="w-full border border-slate-300 rounded-md p-2 text-sm font-semibold text-slate-700"
+            >
+              <option value="">-- No workout assigned --</option>
+              {workoutLibrary.workouts.map(w => (
+                <option key={w.id} value={w.id}>{w.workoutName}</option>
+              ))}
+            </select>
+            <p className="mt-2 text-xs text-slate-400">Students see this as a live, playable circuit timer on their Daily Log page.</p>
           </div>
 
           <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">

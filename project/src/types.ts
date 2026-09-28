@@ -37,6 +37,56 @@ export interface CalendarDay {
   unitName?: string;
   activity?: string;
   lessonPlan?: LessonPlan;
+  /** Id of a Workout in the shared workout library assigned to this class date. */
+  workoutId?: string;
+}
+
+export interface Exercise {
+  id: string;
+  name: string;
+  category: string[];
+  instructions?: string;
+  gifUrl?: string;
+  safetyCues?: string;
+}
+
+export type WorkoutStepType = 'work' | 'rest';
+
+export interface WorkoutStep {
+  exerciseId: string;
+  duration: number;
+  type: WorkoutStepType;
+}
+
+export interface WorkoutCircuit {
+  circuitId: string;
+  rounds: number;
+  sequence: WorkoutStep[];
+}
+
+export type WorkoutMode = 'circuit' | 'stations';
+
+export interface WorkoutStation {
+  id: string;
+  exerciseId: string;
+  label?: string;
+}
+
+export interface Workout {
+  id: string;
+  workoutName: string;
+  /** Missing/'circuit' = the original sequential timer (existing workouts keep working
+   *  unchanged). 'stations' = small groups rotate between simultaneously-active stations
+   *  on a shared clock, advanced manually by the teacher rather than automatically. */
+  mode?: WorkoutMode;
+  circuits: WorkoutCircuit[];
+  stations?: WorkoutStation[];
+  stationDuration?: number;
+}
+
+export interface WorkoutLibrary {
+  exercises: Exercise[];
+  workouts: Workout[];
 }
 
 export interface Team {
@@ -64,6 +114,9 @@ export interface Unit {
   /** Team-set group ids (see resolveMatchGroupId in standings.ts) whose standings have
    *  been explicitly closed out by the admin - locked read-only until unarchived. */
   archivedTeamSetIds?: string[];
+  /** sport_type of another unit this one is a variant of (e.g. Backwards Soccer -> Soccer).
+   *  Purely a navigation/grouping link - content and standings stay fully independent. */
+  parentSportType?: string;
 }
 
 export type MatchType = 'standard' | 'minigame' | 'bracket' | 'solo';

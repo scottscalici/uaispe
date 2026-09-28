@@ -1,21 +1,24 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Lock, ArrowRight, History, CalendarDays } from 'lucide-react';
-import type { CalendarDay, UnitData } from '../types';
+import { Lock, ArrowRight, History, CalendarDays, Dumbbell } from 'lucide-react';
+import type { CalendarDay, UnitData, WorkoutLibrary } from '../types';
+import WorkoutSession from './WorkoutSession';
 
 interface Props {
   calendar: CalendarDay[];
-  units: UnitData[]; 
+  units: UnitData[];
   classId: string;
+  workoutLibrary: WorkoutLibrary;
   onNavigateToUnit: (unitId: string) => void;
 }
 
 type CycleFilter = 'A' | 'B' | 'All';
 
-export default function WorkoutPlayer({ calendar = [], units = [], classId, onNavigateToUnit }: Props) {
+export default function WorkoutPlayer({ calendar = [], units = [], classId, workoutLibrary, onNavigateToUnit }: Props) {
   // Intelligently default to 'A' or 'B' based on the class name
   const [cycle, setCycle] = useState<CycleFilter>(
     classId.includes('A') ? 'A' : classId.includes('B') ? 'B' : 'All'
   );
+  const [activeWorkoutId, setActiveWorkoutId] = useState<string | null>(null);
 
   // If the user switches classes in the top nav, update the filter instantly
   useEffect(() => {
@@ -45,6 +48,7 @@ export default function WorkoutPlayer({ calendar = [], units = [], classId, onNa
       const workoutName = calEntry.activity || calEntry.note || "Regular Class Routine";
 
       const linkedUnit = units.find(u => u.unit.unit_name.toLowerCase() === unitName.toLowerCase());
+      const assignedWorkout = calEntry.workoutId ? workoutLibrary.workouts.find(w => w.id === calEntry.workoutId) || null : null;
 
       return {
         ...calEntry,
@@ -52,7 +56,8 @@ export default function WorkoutPlayer({ calendar = [], units = [], classId, onNa
         isLocked,
         unitName,
         workoutName,
-        linkedUnitId: linkedUnit?.id || null
+        linkedUnitId: linkedUnit?.id || null,
+        assignedWorkout,
       };
     }).sort((a, b) => a.fecha.localeCompare(b.fecha));
 
@@ -70,7 +75,7 @@ export default function WorkoutPlayer({ calendar = [], units = [], classId, onNa
     const active = mostRecentPast ? [mostRecentPast, ...futureDays] : [...futureDays];
 
     return { activeData: active, archivedData: archived };
-  }, [cycle, calendar, units]);
+  }, [cycle, calendar, units, workoutLibrary]);
 
   if (calendar.length === 0) {
     return (
@@ -79,6 +84,11 @@ export default function WorkoutPlayer({ calendar = [], units = [], classId, onNa
         <p>The Master Calendar has not been configured in the Admin portal yet.</p>
       </div>
     );
+  }
+
+  const activeWorkout = activeWorkoutId ? workoutLibrary.workouts.find(w => w.id === activeWorkoutId) : null;
+  if (activeWorkout) {
+    return <WorkoutSession workout={activeWorkout} exercises={workoutLibrary.exercises} onExit={() => setActiveWorkoutId(null)} />;
   }
 
   const renderRow = (row: typeof activeData[0], i: number) => (
@@ -106,6 +116,13 @@ export default function WorkoutPlayer({ calendar = [], units = [], classId, onNa
       <td className="p-4 w-[40%] text-slate-700 align-top">
         {row.isLocked ? (
           <span className="text-slate-400 italic">{row.workoutName}</span>
+        ) : row.assignedWorkout ? (
+          <button
+            onClick={() => setActiveWorkoutId(row.assignedWorkout!.id)}
+            className="flex items-center gap-1.5 rounded-lg bg-orange-100 px-3 py-1.5 text-sm font-bold text-orange-700 hover:bg-orange-200 transition"
+          >
+            <Dumbbell className="h-4 w-4" /> Start {row.assignedWorkout.workoutName}
+          </button>
         ) : (
           <span className="text-slate-800 font-medium">{row.workoutName}</span>
         )}

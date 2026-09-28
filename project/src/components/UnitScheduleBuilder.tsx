@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
-import { Plus, Trash2, BookOpen, CalendarPlus, Save, Swords, Users, Trophy, Pencil, X, Wand2, User } from 'lucide-react';
-import type { SyllabusData, ScheduleData, Match, CalendarDay, MatchType, TeamSet, Unit, Player, Team } from '../types';
+import { Plus, Trash2, BookOpen, CalendarPlus, Save, Swords, Users, Trophy, Pencil, X, Wand2, User, Link as LinkIcon, Unlink, CalendarDays, ListTree } from 'lucide-react';
+import type { SyllabusData, ScheduleData, Match, CalendarDay, MatchType, TeamSet, Unit, Player, Team, UnitData, DailyTeamSnapshot } from '../types';
 import TeamCreator from './TeamCreator';
 
 interface Props {
@@ -12,6 +12,8 @@ interface Props {
   calendar: CalendarDay[];
   roster: Player[];
   unit: Unit;
+  allUnits: UnitData[];
+  dailyTeams: Record<string, DailyTeamSnapshot>;
   onUpdateUnitName: (name: string) => void;
   onUpdateSyllabus: (s: SyllabusData) => void;
   onAddMatch: (m: Omit<Match, 'id'>) => void;
@@ -20,6 +22,7 @@ interface Props {
   onGenerateTeams: (teams: Team[], teamSetName?: string) => void;
   onMovePlayer: (playerId: string, fromTeamId: number, toTeamId: number) => void;
   onDeleteTeamSet: (teamSetId: string) => void;
+  onSetParentSportType: (parentSportType: string | null) => void;
 }
 
 export default function UnitScheduleBuilder({
@@ -31,6 +34,8 @@ export default function UnitScheduleBuilder({
   calendar,
   roster,
   unit,
+  allUnits,
+  dailyTeams,
   onUpdateUnitName,
   onUpdateSyllabus,
   onAddMatch,
@@ -39,6 +44,7 @@ export default function UnitScheduleBuilder({
   onGenerateTeams,
   onMovePlayer,
   onDeleteTeamSet,
+  onSetParentSportType,
 }: Props) {
   const [tab, setTab] = useState<'unit' | 'generator' | 'schedule'>('unit');
 
@@ -77,6 +83,12 @@ export default function UnitScheduleBuilder({
           onUpdateUnitName={onUpdateUnitName}
           syllabus={syllabus}
           onSave={onUpdateSyllabus}
+          unit={unit}
+          schedule={schedule}
+          allUnits={allUnits}
+          calendar={calendar}
+          dailyTeams={dailyTeams}
+          onSetParentSportType={onSetParentSportType}
         />
       ) : tab === 'generator' ? (
         <TeamCreator roster={roster} unit={unit} onGenerate={onGenerateTeams} onMovePlayer={onMovePlayer} onDeleteTeamSet={onDeleteTeamSet} />
@@ -87,7 +99,7 @@ export default function UnitScheduleBuilder({
   );
 }
 
-function UnitPlanEditor({ unitName, onUpdateUnitName, syllabus, onSave }: any) {
+function UnitPlanEditor({ unitName, onUpdateUnitName, syllabus, onSave, unit, schedule, allUnits, calendar, dailyTeams, onSetParentSportType }: any) {
   const [draft, setDraft] = useState<SyllabusData>(syllabus);
   const update = (patch: Partial<SyllabusData>) => setDraft((d) => ({ ...d, ...patch }));
   
@@ -133,6 +145,8 @@ function UnitPlanEditor({ unitName, onUpdateUnitName, syllabus, onSave }: any) {
         </label>
         <p className="mt-1 text-xs text-emerald-600 font-medium">This instantly updates the top navigation dropdown.</p>
       </div>
+
+      <UnitFamilyCard unit={unit} allUnits={allUnits} onSetParentSportType={onSetParentSportType} />
 
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h3 className="mb-3 text-sm font-bold uppercase text-slate-500">Student Syllabus Info</h3>
@@ -251,6 +265,177 @@ function UnitPlanEditor({ unitName, onUpdateUnitName, syllabus, onSave }: any) {
       <button onClick={() => onSave(draft)} className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-3 text-sm font-bold text-white hover:bg-emerald-700">
         <Save className="h-4 w-4" /> Save Student Syllabus
       </button>
+
+      <ActivityLog unit={unit} schedule={schedule} allUnits={allUnits} calendar={calendar} dailyTeams={dailyTeams} />
+    </div>
+  );
+}
+
+function UnitFamilyCard({ unit, allUnits, onSetParentSportType }: any) {
+  const otherUnits: UnitData[] = allUnits.filter((u: UnitData) => u.unit.sport_type !== unit.sport_type);
+  const parentUnit = allUnits.find((u: UnitData) => u.unit.sport_type === unit.parentSportType);
+  const childUnits = allUnits.filter((u: UnitData) => u.unit.parentSportType === unit.sport_type);
+
+  return (
+    <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-4 shadow-sm">
+      <h3 className="mb-3 flex items-center gap-1.5 text-sm font-bold uppercase text-indigo-700">
+        <LinkIcon className="h-4 w-4" /> Unit Family
+      </h3>
+
+      <label className="block mb-3">
+        <span className="mb-1 block text-xs font-semibold uppercase text-indigo-600">This unit is a variant of</span>
+        <div className="flex items-center gap-2">
+          <select
+            value={unit.parentSportType || ''}
+            onChange={(e) => onSetParentSportType(e.target.value || null)}
+            className="w-full sm:w-auto flex-1 rounded-md border border-indigo-300 bg-white px-3 py-2 text-sm font-semibold text-indigo-900 focus:border-indigo-500 focus:outline-none"
+          >
+            <option value="">-- Standalone (no parent) --</option>
+            {otherUnits.map((u: UnitData) => (
+              <option key={u.unit.sport_type} value={u.unit.sport_type}>{u.unit.unit_name}</option>
+            ))}
+          </select>
+          {unit.parentSportType && (
+            <button
+              onClick={() => onSetParentSportType(null)}
+              title="Unlink from parent"
+              className="flex items-center gap-1 rounded-md bg-indigo-100 px-2 py-2 text-xs font-bold text-indigo-700 hover:bg-indigo-200"
+            >
+              <Unlink className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+        {parentUnit && (
+          <p className="mt-1.5 text-xs text-indigo-600">Variant of <strong>{parentUnit.unit.unit_name}</strong> - its own content and standings stay independent; this link is just for grouping.</p>
+        )}
+      </label>
+
+      {childUnits.length > 0 && (
+        <div>
+          <span className="mb-1 block text-xs font-semibold uppercase text-indigo-600">Variants of this unit</span>
+          <div className="flex flex-wrap gap-2">
+            {childUnits.map((u: UnitData) => (
+              <span key={u.id} className="rounded-full bg-white border border-indigo-200 px-3 py-1 text-xs font-bold text-indigo-700">{u.unit.unit_name}</span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ActivityLog({ unit, schedule, allUnits, calendar, dailyTeams }: any) {
+  const childUnits: UnitData[] = allUnits.filter((u: UnitData) => u.unit.parentSportType === unit.sport_type);
+
+  const relevantDays = useMemo(() => {
+    const selfName = (unit.unit_name || '').toLowerCase().trim();
+    const childNameMap = new Map<string, UnitData>();
+    childUnits.forEach((u: UnitData) => childNameMap.set((u.unit.unit_name || '').toLowerCase().trim(), u));
+
+    return calendar
+      .filter((d: CalendarDay) => (d.status === 'school' || d.status === 'half-day') && d.unitName)
+      .map((d: CalendarDay) => {
+        const name = (d.unitName || '').toLowerCase().trim();
+        if (name === selfName) return { day: d, owner: null as UnitData | null };
+        if (childNameMap.has(name)) return { day: d, owner: childNameMap.get(name)! };
+        return null;
+      })
+      .filter((entry: any): entry is { day: CalendarDay, owner: UnitData | null } => entry !== null)
+      .sort((a: any, b: any) => b.day.fecha.localeCompare(a.day.fecha));
+  }, [calendar, unit, childUnits]);
+
+  const getLogoUrl = (unitName: string, teamName: string) => {
+    if (!teamName || teamName === 'TBD') return '';
+    const normalize = (str: string) => str.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    return `https://raw.githubusercontent.com/scottscalici/PE/main/teams/${normalize(unitName)}/${normalize(teamName)}.png`;
+  };
+
+  const resolveTeams = (dayUnit: Unit, dateStr: string, teamSetId?: string) => {
+    if (dailyTeams[dateStr]) return dailyTeams[dateStr].teams;
+    if (teamSetId && teamSetId !== 'base') return dayUnit.teamSets?.find((ts: TeamSet) => ts.id === teamSetId)?.teams;
+    return dayUnit.baseTeams;
+  };
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <h3 className="mb-3 flex items-center gap-1.5 text-sm font-bold uppercase text-slate-500">
+        <ListTree className="h-4 w-4" /> Activity Log
+      </h3>
+      <p className="mb-4 text-xs text-slate-400">Every real class date this unit{childUnits.length > 0 ? ' (and its variants)' : ''} was actually taught, most recent first - teams and results pulled from that day.</p>
+
+      {relevantDays.length === 0 ? (
+        <div className="rounded-lg border-2 border-dashed border-slate-200 p-6 text-center text-sm text-slate-400 italic">
+          No calendar days tagged for this unit yet. Assign this unit to dates in the Master Calendar.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {relevantDays.map(({ day, owner }: { day: CalendarDay; owner: UnitData | null }) => {
+            const dayUnit: Unit = owner ? owner.unit : unit;
+            const daySchedule: ScheduleData = owner ? owner.schedule : schedule;
+            const dayMatches = daySchedule.matches.filter((m: Match) => m.date_str === day.fecha).sort((a: Match, b: Match) => (a.time || '').localeCompare(b.time || ''));
+
+            return (
+              <div key={day.fecha} className="rounded-lg border border-slate-200 p-3">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <span className="flex items-center gap-1 text-sm font-black text-slate-800"><CalendarDays className="h-3.5 w-3.5 text-slate-400" /> {day.fecha}</span>
+                  {owner && <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-indigo-700">{owner.unit.unit_name}</span>}
+                  {day.activity && <span className="text-xs text-slate-500">{day.activity}</span>}
+                </div>
+
+                {day.lessonPlan?.goals && (
+                  <p className="mb-2 text-xs text-slate-600 italic">"{day.lessonPlan.goals}"</p>
+                )}
+
+                {dayMatches.length === 0 ? (
+                  <p className="text-xs text-slate-400 italic">No teams/games logged for this date.</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {dayMatches.map((m: Match) => {
+                      if (m.match_type === 'minigame') {
+                        const teams = resolveTeams(dayUnit, m.date_str, m.team_set_id);
+                        return (
+                          <div key={m.id} className="flex flex-wrap items-center gap-2 rounded-md bg-indigo-50/50 border border-indigo-100 px-2.5 py-1.5 text-xs">
+                            <span className="flex items-center gap-1 font-bold text-indigo-700"><Users className="h-3 w-3" /> Mini-Games</span>
+                            <span className="text-slate-500">{m.time} - {m.location}</span>
+                            <span className="flex flex-wrap gap-1.5">
+                              {teams?.map((t: Team) => (
+                                <span key={t.id} className="flex items-center gap-1 font-semibold text-slate-700">
+                                  <img src={getLogoUrl(dayUnit.unit_name, t.name)} onError={e => e.currentTarget.style.display = 'none'} className="h-3.5 w-3.5 object-contain" alt="" /> {t.name}
+                                  {m.awardedTeamCounts?.[t.id] ? <span className="text-emerald-600 font-black">×{m.awardedTeamCounts[t.id]}</span> : null}
+                                </span>
+                              ))}
+                            </span>
+                          </div>
+                        );
+                      }
+                      if (m.match_type === 'solo') {
+                        return (
+                          <div key={m.id} className="flex flex-wrap items-center gap-2 rounded-md bg-purple-50/50 border border-purple-100 px-2.5 py-1.5 text-xs">
+                            <span className="flex items-center gap-1 font-bold text-purple-700"><User className="h-3 w-3" /> Individual Event</span>
+                            <span className="text-slate-500">{m.time} - {m.location}</span>
+                            <span className="flex items-center gap-1 font-semibold text-slate-700"><Trophy className="h-3 w-3 text-amber-500" /> {m.away_team}</span>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div key={m.id} className="flex flex-wrap items-center gap-2 rounded-md bg-slate-50 border border-slate-100 px-2.5 py-1.5 text-xs">
+                          {m.match_type === 'bracket' && <span className="font-bold text-amber-600 uppercase text-[10px]">{m.round_name}</span>}
+                          <span className="text-slate-500">{m.time} - {m.location}</span>
+                          <span className="font-semibold text-slate-700">{m.home_team}</span>
+                          <span className="font-black text-slate-400">
+                            {m.completed && m.home_score !== null && m.away_score !== null ? `${m.home_score} - ${m.away_score}` : 'vs'}
+                          </span>
+                          <span className="font-semibold text-slate-700">{m.away_team}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

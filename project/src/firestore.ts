@@ -5,11 +5,14 @@ import {
   onSnapshot,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import type { ClassData } from './types';
+import type { ClassData, WorkoutLibrary } from './types';
 import { initialClasses } from './data';
+import { seedExercises, seedWorkouts } from './workoutSeedData';
 import { centralDb } from './firebase';
 const CLASSES_COLLECTION = 'pe_classes';
 const META_DOC = 'app_meta';
+const WORKOUT_LIBRARY_COLLECTION = 'pe_workout_library';
+const WORKOUT_LIBRARY_DOC = 'data';
 
 export interface AppMeta {
   classIds: string[];
@@ -117,6 +120,26 @@ export async function fetchCentralCalendar() {
     return [];
   }
 }
+export function subscribeToWorkoutLibrary(
+  onUpdate: (library: WorkoutLibrary) => void,
+): () => void {
+  const ref = doc(db, WORKOUT_LIBRARY_COLLECTION, WORKOUT_LIBRARY_DOC);
+  return onSnapshot(ref, (snap) => {
+    if (snap.exists()) {
+      onUpdate(snap.data() as WorkoutLibrary);
+    } else {
+      const seed: WorkoutLibrary = { exercises: seedExercises, workouts: seedWorkouts };
+      onUpdate(seed);
+      void setDoc(ref, stripUndefined(seed));
+    }
+  });
+}
+
+export async function saveWorkoutLibrary(library: WorkoutLibrary): Promise<void> {
+  const ref = doc(db, WORKOUT_LIBRARY_COLLECTION, WORKOUT_LIBRARY_DOC);
+  await setDoc(ref, stripUndefined(library));
+}
+
 function stripUndefined(obj: unknown): unknown {
   return JSON.parse(JSON.stringify(obj));
 }

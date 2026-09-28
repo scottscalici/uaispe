@@ -5,11 +5,13 @@ import {
 } from 'lucide-react';
 import type {
   ClassData, Unit, ScheduleData, SyllabusData, DailyLogMap, DailyLog, ScoreType,
-  QuarterHistoryMap, AttendanceMap, Player, Team, Match, UnitData, DailyTeamSnapshot
+  QuarterHistoryMap, AttendanceMap, Player, Team, Match, UnitData, DailyTeamSnapshot,
+  WorkoutLibrary, Exercise, Workout
 } from './types';
 import { initialClasses } from './data';
+import { seedExercises, seedWorkouts } from './workoutSeedData';
 import { emptyLog } from './grading';
-import { loadAppMeta, ensureInitialData, subscribeToClasses, saveClass } from './firestore';
+import { loadAppMeta, ensureInitialData, subscribeToClasses, saveClass, subscribeToWorkoutLibrary, saveWorkoutLibrary } from './firestore';
 import TeamManager from './components/TeamManager';
 import ScheduleStandings from './components/ScheduleStandings';
 import UnitSyllabus from './components/UnitSyllabus';
@@ -22,6 +24,7 @@ import Leaderboards from './components/Leaderboards';
 import WorkoutPlayer from './components/WorkoutPlayer';
 import MasterCalendarBuilder from './components/MasterCalendarBuilder';
 import DailyPlanner from './components/DailyPlanner';
+import WorkoutBuilder from './components/WorkoutBuilder';
 
 type AdminView = 'teams' | 'schedule' | 'attendance' | 'roster' | 'calendar' | 'builder' | 'leaderboards';
 type PublicView = 'syllabus' | 'dashboard' | 'leaderboards' | 'workout';
@@ -55,7 +58,7 @@ export default function App() {
 
   const [adminView, setAdminView] = useState<AdminView>('teams');
   const [logsSubTab, setLogsSubTab] = useState<'daily' | 'exceptions'>('daily');
-  const [calendarSubTab, setCalendarSubTab] = useState<'calendar' | 'planner'>('calendar');
+  const [calendarSubTab, setCalendarSubTab] = useState<'calendar' | 'planner' | 'workouts'>('calendar');
   const [publicView, setPublicView] = useState<PublicView>('syllabus');
   const [classes, setClasses] = useState<ClassData[]>(initialClasses);
   const [activeClassId, setActiveClassId] = useState<string>(initialClasses[0].id);
@@ -73,6 +76,10 @@ export default function App() {
   const [firestoreReady, setFirestoreReady] = useState(false);
   const skipNextSave = useRef(true);
   const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  const [workoutLibrary, setWorkoutLibrary] = useState<WorkoutLibrary>({ exercises: seedExercises, workouts: seedWorkouts });
+  const skipNextWorkoutSave = useRef(true);
+  const workoutSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const activeClass = classes.find((c) => c.id === activeClassId) || classes[0];
 
@@ -246,6 +253,51 @@ export default function App() {
       }, 800);
     });
   }, [classes, firestoreReady]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToWorkoutLibrary((library) => {
+      skipNextWorkoutSave.current = true;
+      setWorkoutLibrary(library);
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    if (skipNextWorkoutSave.current) { skipNextWorkoutSave.current = false; return; }
+    if (workoutSaveTimer.current) clearTimeout(workoutSaveTimer.current);
+    workoutSaveTimer.current = setTimeout(async () => {
+      try { await saveWorkoutLibrary(workoutLibrary); } catch (err) {}
+    }, 800);
+  }, [workoutLibrary]);
+
+  const handleSaveExercise = (exercise: Exercise) => setWorkoutLibrary((prev) => {
+    const idx = prev.exercises.findIndex((e) => e.id === exercise.id);
+    const exercises = idx >= 0
+      ? prev.exercises.map((e) => (e.id === exercise.id ? exercise : e))
+      : [...prev.exercises, exercise];
+    return { ...prev, exercises: exercises.sort((a, b) => a.name.localeCompare(b.name)) };
+  });
+
+  const handleDeleteExercise = (exerciseId: string) => setWorkoutLibrary((prev) => ({
+    ...prev, exercises: prev.exercises.filter((e) => e.id !== exerciseId),
+  }));
+
+  const handleSaveWorkout = (workout: Workout) => setWorkoutLibrary((prev) => {
+    const idx = prev.workouts.findIndex((w) => w.id === workout.id);
+    const workouts = idx >= 0
+      ? prev.workouts.map((w) => (w.id === workout.id ? workout : w))
+      : [...prev.workouts, workout];
+    return { ...prev, workouts };
+  });
+
+  const handleDeleteWorkout = (workoutId: string) => setWorkoutLibrary((prev) => ({
+    ...prev, workouts: prev.workouts.filter((w) => w.id !== workoutId),
+  }));
+
+  const handleAssignWorkout = (dateStr: string, workoutId: string | null) => updateClass((c) => ({
+    ...c,
+    masterCalendar: (c.masterCalendar || []).map((day) => day.fecha === dateStr ? { ...day, workoutId: workoutId || undefined } : day),
+  }));
 
   const updateClass = (updater: (c: ClassData) => ClassData) => setClasses((prev) => prev.map((c) => (c.id === activeClassId ? updater(c) : c)));
   const updateActiveUnit = (updater: (u: UnitData) => UnitData) => updateClass((c) => {
@@ -507,6 +559,20 @@ export default function App() {
     })));
   };
 
+  const handleSetParentSportType = (parentSportType: string | null) => {
+    const targetLinkID = activeUnitData?.unit.sport_type;
+    if (!targetLinkID) return;
+
+    setClasses(prev => prev.map(c => ({
+      ...c,
+      units: c.units.map(u =>
+        u.unit.sport_type === targetLinkID
+          ? { ...u, unit: { ...u.unit, parentSportType: parentSportType || undefined } }
+          : u
+      )
+    })));
+  };
+
   const handleUpdateSyllabus = (s: SyllabusData) => {
     const targetLinkID = activeUnitData?.unit.sport_type;
     if (!targetLinkID) return;
@@ -738,11 +804,19 @@ export default function App() {
                       >
                         <ListTodo className="h-4 w-4" /> Daily Planner
                       </button>
+                      <button
+                        onClick={() => setCalendarSubTab('workouts')}
+                        className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${calendarSubTab === 'workouts' ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                      >
+                        <Activity className="h-4 w-4" /> Workouts
+                      </button>
                     </div>
                     {calendarSubTab === 'calendar' ? (
                       <MasterCalendarBuilder key={`cal-${activeClassId}`} calendar={activeClass.masterCalendar || []} classId={activeClassId} onSave={(cal) => updateClass(c => ({ ...c, masterCalendar: cal }))} />
+                    ) : calendarSubTab === 'planner' ? (
+                      <DailyPlanner key={`plan-${activeClassId}`} calendar={activeClass.masterCalendar || []} units={activeClass.units || []} workoutLibrary={workoutLibrary} onUpdateCalendarDay={(dateStr, updates) => updateClass(c => ({ ...c, masterCalendar: (c.masterCalendar || []).map(day => day.fecha === dateStr ? { ...day, ...updates } : day) }))} onAssignWorkout={handleAssignWorkout} />
                     ) : (
-                      <DailyPlanner key={`plan-${activeClassId}`} calendar={activeClass.masterCalendar || []} units={activeClass.units || []} onUpdateCalendarDay={(dateStr, updates) => updateClass(c => ({ ...c, masterCalendar: (c.masterCalendar || []).map(day => day.fecha === dateStr ? { ...day, ...updates } : day) }))} />
+                      <WorkoutBuilder library={workoutLibrary} onSaveExercise={handleSaveExercise} onDeleteExercise={handleDeleteExercise} onSaveWorkout={handleSaveWorkout} onDeleteWorkout={handleDeleteWorkout} />
                     )}
                   </div>
                 )
@@ -756,7 +830,7 @@ export default function App() {
                   onUpdateTeammatePoints={handleUpdateTeammatePoints}
                 />
               )
-              : <UnitScheduleBuilder key={`builder-${unit.unit_id}`} unitName={unit.unit_name} onUpdateUnitName={handleUpdateUnitName} syllabus={syllabus} schedule={schedule} teamNames={teamNames} teamSets={unit.teamSets} calendar={activeClass.masterCalendar || []} roster={roster} unit={unit} onUpdateSyllabus={handleUpdateSyllabus} onAddMatch={handleAddMatch} onUpdateMatch={handleUpdateMatch} onDeleteMatch={handleDeleteMatch} onGenerateTeams={handleGenerateTeams} onMovePlayer={handleMovePlayer} onDeleteTeamSet={handleDeleteTeamSet} />}
+              : <UnitScheduleBuilder key={`builder-${unit.unit_id}`} unitName={unit.unit_name} onUpdateUnitName={handleUpdateUnitName} syllabus={syllabus} schedule={schedule} teamNames={teamNames} teamSets={unit.teamSets} calendar={activeClass.masterCalendar || []} roster={roster} unit={unit} allUnits={activeClass.units} dailyTeams={activeClass.dailyTeams || {}} onUpdateSyllabus={handleUpdateSyllabus} onAddMatch={handleAddMatch} onUpdateMatch={handleUpdateMatch} onDeleteMatch={handleDeleteMatch} onGenerateTeams={handleGenerateTeams} onMovePlayer={handleMovePlayer} onDeleteTeamSet={handleDeleteTeamSet} onSetParentSportType={handleSetParentSportType} />}
 
               {adminView === 'builder' && (
                 <div className="mt-16 border-t border-red-200 pt-8 pb-8">
@@ -771,11 +845,12 @@ export default function App() {
               )}
             </>
        ) : publicView === 'workout' ? (
-              <WorkoutPlayer 
-                key={`workout-${activeClassId}`} 
-                calendar={activeClass.masterCalendar || []} 
-                units={activeClass.units || []} 
+              <WorkoutPlayer
+                key={`workout-${activeClassId}`}
+                calendar={activeClass.masterCalendar || []}
+                units={activeClass.units || []}
                 classId={activeClassId}
+                workoutLibrary={workoutLibrary}
                 onNavigateToUnit={(unitId) => {
                   setStudentUnitId(unitId); 
                   setPublicView('dashboard');

@@ -276,7 +276,7 @@ export default function ScheduleStandings({
                   onAwardTeamWin={onAwardTeamWin}
                   onUnawardTeamWin={onUnawardTeamWin}
                   onToggleMatchComplete={onToggleMatchComplete}
-                  locked={isArchived || m.completed}
+                  locked={isArchived}
                 />
               ))}
               {groupMatches.length === 0 && (
