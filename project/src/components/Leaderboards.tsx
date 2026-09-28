@@ -1,28 +1,34 @@
 import { useMemo, useState } from 'react';
 import { Trophy, Star, ChevronDown, ChevronUp, Plus, Minus, History, CalendarDays } from 'lucide-react';
-import type { Player, Unit, TeammatePointMap, ScheduleData, Match } from '../types';
+import type { Player, Unit, UnitData, TeammatePointMap, Match } from '../types';
 import { computeWinsFromSchedule, resolveMatchTeams } from '../standings';
 
 interface Props {
   roster: Player[];
-  unit: Unit;
+  allUnits: UnitData[];
   teammatePoints: TeammatePointMap;
-  schedule: ScheduleData;
   onUpdateTeammatePoints: (playerId: string, delta: number) => void;
 }
 
 export default function Leaderboards({
-  roster, unit, teammatePoints, schedule, onUpdateTeammatePoints
+  roster, allUnits, teammatePoints, onUpdateTeammatePoints
 }: Props) {
   const [activeTab, setActiveTab] = useState<'wins' | 'teammates'>('wins');
   const [expandedPlayerId, setExpandedPlayerId] = useState<string | null>(null);
 
-  // Always computed fresh from the schedule + each team-set's assigned roster - never stored, so
-  // there's nothing to keep in sync when a roster changes.
-  const wins = useMemo(
-    () => computeWinsFromSchedule(schedule.matches, unit),
-    [schedule, unit]
-  );
+  // Always computed fresh from every unit's schedule + each team-set's assigned roster - never
+  // stored, so there's nothing to keep in sync when a roster changes. A student's total for the
+  // whole class, across every unit it's ever run, not just whichever one is active right now.
+  const wins = useMemo(() => {
+    const totals: Record<string, number> = {};
+    allUnits.forEach(u => {
+      const unitTotals = computeWinsFromSchedule(u.schedule.matches, u.unit);
+      Object.entries(unitTotals).forEach(([playerId, count]) => {
+        totals[playerId] = (totals[playerId] ?? 0) + count;
+      });
+    });
+    return totals;
+  }, [allUnits]);
 
   // Derive the ranked lists
   const rankedByWins = [...roster]
@@ -34,27 +40,27 @@ export default function Leaderboards({
     .sort((a, b) => (teammatePoints[b.id] || 0) - (teammatePoints[a.id] || 0));
 
   // Dynamic Audit Log: Reconstruct when a player won based on schedule & daily snapshots
-  interface WinHistoryEntry { match: Match; label: string; count?: number; }
+  interface WinHistoryEntry { match: Match; label: string; count?: number; unitName: string; }
 
-  const getPlayerWinHistory = (playerId: string): WinHistoryEntry[] => {
+  const getWinHistoryFor = (matches: Match[], u: Unit, playerId: string): WinHistoryEntry[] => {
     const entries: WinHistoryEntry[] = [];
 
-    schedule.matches.forEach(m => {
+    matches.forEach(m => {
       if (m.match_type === 'solo') {
         if (m.winner_player_id === playerId) {
-          entries.push({ match: m, label: 'Solo Event Win' });
+          entries.push({ match: m, label: 'Solo Event Win', unitName: u.unit_name });
         }
         return;
       }
 
-      const resolvedTeams = resolveMatchTeams(m, unit);
+      const resolvedTeams = resolveMatchTeams(m, u);
 
       if (m.match_type === 'minigame') {
         Object.entries(m.awardedTeamCounts || {}).forEach(([teamIdStr, count]) => {
           if (!count) return;
           const team = resolvedTeams?.find(t => t.id === Number(teamIdStr));
           if (team?.players.some(p => p.id === playerId)) {
-            entries.push({ match: m, label: `Mini-Games (${team.name})`, count });
+            entries.push({ match: m, label: `Mini-Games (${team.name})`, count, unitName: u.unit_name });
           }
         });
         return;
@@ -66,12 +72,15 @@ export default function Leaderboards({
 
       const winnerTeam = resolvedTeams?.find(t => t.name === winnerName);
       if (winnerTeam && winnerTeam.players.some(p => p.id === playerId)) {
-        entries.push({ match: m, label: `${m.home_team} (${m.home_score}) vs ${m.away_team} (${m.away_score})` });
+        entries.push({ match: m, label: `${m.home_team} (${m.home_score}) vs ${m.away_team} (${m.away_score})`, unitName: u.unit_name });
       }
     });
 
     return entries;
   };
+
+  const getPlayerWinHistory = (playerId: string): WinHistoryEntry[] =>
+    allUnits.flatMap(u => getWinHistoryFor(u.schedule.matches, u.unit, playerId));
 
   const toggleExpand = (id: string) => {
     setExpandedPlayerId(prev => prev === id ? null : id);
@@ -83,18 +92,18 @@ export default function Leaderboards({
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-          <Trophy className="w-6 h-6 text-amber-500" /> {unit.unit_name} Leaderboards
+          <Trophy className="w-6 h-6 text-amber-500" /> All-Time Leaderboards
         </h2>
       </div>
 
       <div className="flex bg-white rounded-xl shadow-sm border border-slate-200 p-1">
-        <button 
+        <button
           onClick={() => setActiveTab('wins')}
           className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-bold rounded-lg transition-all ${activeTab === 'wins' ? 'bg-amber-100 text-amber-800' : 'text-slate-500 hover:bg-slate-50'}`}
         >
-          <Trophy className="w-4 h-4" /> Lifetime Wins
+          <Trophy className="w-4 h-4" /> All-Time Wins
         </button>
-        <button 
+        <button
           onClick={() => setActiveTab('teammates')}
           className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-bold rounded-lg transition-all ${activeTab === 'teammates' ? 'bg-indigo-100 text-indigo-800' : 'text-slate-500 hover:bg-slate-50'}`}
         >
@@ -183,6 +192,9 @@ export default function Leaderboards({
                                     <span className="font-semibold text-slate-700">{new Date(entry.match.date_str).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
                                   </div>
                                   <div className="text-slate-600 flex items-center gap-1.5">
+                                    {entry.unitName && (
+                                      <span className="bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide">{entry.unitName}</span>
+                                    )}
                                     {entry.label}
                                     {entry.count && entry.count > 1 && (
                                       <span className="bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full text-xs font-black">×{entry.count}</span>

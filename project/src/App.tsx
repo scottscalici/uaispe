@@ -823,9 +823,8 @@ export default function App() {
               : adminView === 'leaderboards' ? (
                 <Leaderboards
                   roster={roster}
-                  unit={unit}
+                  allUnits={activeClass.units || []}
                   teammatePoints={teammatePoints}
-                  schedule={schedule}
                   onUpdateTeammatePoints={handleUpdateTeammatePoints}
                 />
               )
