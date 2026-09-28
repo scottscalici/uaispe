@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { CalendarDays, Clock, MapPin, BarChart3, Users, Plus, Minus, Trophy, Lock, Unlock, Printer, User } from 'lucide-react';
-import type { ScheduleData, Match, Unit, DailyTeamSnapshot, Player } from '../types';
+import type { ScheduleData, Match, Unit, Player } from '../types';
 import { computeStandings, rankStandings, groupMatchesBySet } from '../standings';
 
 const SOLO_GROUP_ID = '__solo__';
@@ -9,7 +9,6 @@ interface Props {
   unit: Unit;
   schedule: ScheduleData;
   roster: Player[];
-  dailyTeams: Record<string, DailyTeamSnapshot>;
   isAdmin: boolean;
   onUpdateScore: (matchId: number, side: 'home' | 'away', value: number | null) => void;
   onAwardTeamWin: (matchId: number, teamId: number) => void;
@@ -20,7 +19,7 @@ interface Props {
 }
 
 export default function ScheduleStandings({
-  unit, schedule, roster, dailyTeams, isAdmin,
+  unit, schedule, roster, isAdmin,
   onUpdateScore, onAwardTeamWin, onUnawardTeamWin, onToggleMatchComplete,
   onArchiveGroup, onUnarchiveGroup,
 }: Props) {
@@ -36,7 +35,7 @@ export default function ScheduleStandings({
 
   // Each team-set (whichever roster arrangement was actually used) gets its own standings
   // page, reused across every date it appears on - never split by day.
-  const groups = useMemo(() => groupMatchesBySet(sortedAllMatches, dailyTeams, unit), [sortedAllMatches, dailyTeams, unit]);
+  const groups = useMemo(() => groupMatchesBySet(sortedAllMatches, unit), [sortedAllMatches, unit]);
 
   const tabs = useMemo(() => {
     const list = groups.map(g => ({ id: g.id, label: g.label, count: g.matches.length }));

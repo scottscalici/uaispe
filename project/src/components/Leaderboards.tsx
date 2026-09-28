@@ -1,28 +1,27 @@
 import { useMemo, useState } from 'react';
 import { Trophy, Star, ChevronDown, ChevronUp, Plus, Minus, History, CalendarDays } from 'lucide-react';
-import type { Player, Unit, TeammatePointMap, ScheduleData, DailyTeamSnapshot, Match } from '../types';
-import { computeWinsFromSchedule } from '../standings';
+import type { Player, Unit, TeammatePointMap, ScheduleData, Match } from '../types';
+import { computeWinsFromSchedule, resolveMatchTeams } from '../standings';
 
 interface Props {
   roster: Player[];
   unit: Unit;
   teammatePoints: TeammatePointMap;
   schedule: ScheduleData;
-  dailyTeams: Record<string, DailyTeamSnapshot>;
   onUpdateTeammatePoints: (playerId: string, delta: number) => void;
 }
 
 export default function Leaderboards({
-  roster, unit, teammatePoints, schedule, dailyTeams, onUpdateTeammatePoints
+  roster, unit, teammatePoints, schedule, onUpdateTeammatePoints
 }: Props) {
   const [activeTab, setActiveTab] = useState<'wins' | 'teammates'>('wins');
   const [expandedPlayerId, setExpandedPlayerId] = useState<string | null>(null);
 
-  // Always computed fresh from the schedule + today's actual team rosters - never stored, so
+  // Always computed fresh from the schedule + each team-set's assigned roster - never stored, so
   // there's nothing to keep in sync when a roster changes.
   const wins = useMemo(
-    () => computeWinsFromSchedule(schedule.matches, unit, dailyTeams),
-    [schedule, unit, dailyTeams]
+    () => computeWinsFromSchedule(schedule.matches, unit),
+    [schedule, unit]
   );
 
   // Derive the ranked lists
@@ -48,11 +47,7 @@ export default function Leaderboards({
         return;
       }
 
-      const resolvedTeams = dailyTeams[m.date_str]
-        ? dailyTeams[m.date_str].teams
-        : (m.team_set_id && m.team_set_id !== 'base'
-            ? unit.teamSets?.find(ts => ts.id === m.team_set_id)?.teams
-            : unit.baseTeams);
+      const resolvedTeams = resolveMatchTeams(m, unit);
 
       if (m.match_type === 'minigame') {
         Object.entries(m.awardedTeamCounts || {}).forEach(([teamIdStr, count]) => {

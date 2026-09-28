@@ -1,13 +1,24 @@
-import type { Match, Standings, StandingRow, Unit, DailyTeamSnapshot } from './types';
+import type { Match, Standings, StandingRow, Unit, Team } from './types';
 
-/**
- * Which team-set "series" a match belongs to for standings purposes - the team-set actually
- * used that day (a Game Day Snapshot's source set, if the roster was adjusted that day) or
- * else the team-set the match was scheduled against. Matches that trace to the same id, on
- * any date, are one continuous standings page - reused team-sets aren't split by day.
- */
-export function resolveMatchGroupId(m: Match, dailyTeams: Record<string, DailyTeamSnapshot>): string {
-  return dailyTeams[m.date_str]?.baseTeamSetId ?? m.team_set_id ?? 'base';
+/** Which team-set "series" a match belongs to for standings purposes - always the team-set it
+ *  was actually programmed against, regardless of any Game Day Snapshot loaded that date. A
+ *  snapshot is a rare, same-day-only operational override (drastic-day substitutions); it never
+ *  changes which team-set a match's record belongs to or who gets credited for its result -
+ *  that always follows the assigned roster, so a temporary daily swap can't split a team-set's
+ *  history across groups or silently drop a win when the snapshot doesn't match by name. Matches
+ *  that share this id, on any date, are one continuous standings page. */
+export function resolveMatchGroupId(m: Match): string {
+  return m.team_set_id && m.team_set_id !== 'base' ? m.team_set_id : 'base';
+}
+
+/** The assigned roster to credit for a match - the current composition of the team-set it was
+ *  programmed against (base teams, or a specific team-set), never a Game Day Snapshot. Move a
+ *  player between teams and every match's credit follows them from then on; a one-off Game Day
+ *  Snapshot substitution intentionally isn't reflected here, to keep exactly one, stable answer
+ *  for "who gets this win" with no risk of double-crediting. */
+export function resolveMatchTeams(m: Match, unit: Unit): Team[] | undefined {
+  const groupId = resolveMatchGroupId(m);
+  return groupId === 'base' ? unit.baseTeams : unit.teamSets?.find((ts) => ts.id === groupId)?.teams;
 }
 
 export function getGroupLabel(groupId: string, unit: Unit): string {
@@ -24,10 +35,10 @@ export interface MatchGroup {
 }
 
 /** Buckets non-solo matches by their team-set group, sorted by when each group was first used. */
-export function groupMatchesBySet(matches: Match[], dailyTeams: Record<string, DailyTeamSnapshot>, unit: Unit): MatchGroup[] {
+export function groupMatchesBySet(matches: Match[], unit: Unit): MatchGroup[] {
   const buckets = new Map<string, Match[]>();
   matches.filter((m) => m.match_type !== 'solo').forEach((m) => {
-    const groupId = resolveMatchGroupId(m, dailyTeams);
+    const groupId = resolveMatchGroupId(m);
     if (!buckets.has(groupId)) buckets.set(groupId, []);
     buckets.get(groupId)!.push(m);
   });
@@ -125,23 +136,14 @@ export function computeStandings(matches: Match[]): Standings {
  * Player win counts, computed fresh every time from the schedule itself - never stored or
  * manually adjusted. A match's recorded result (a score, a mini-game's awardedTeamCounts, or a
  * solo event's winner_player_id) is the only source of truth; who gets credited for it is
- * always today's actual team roster (that date's Game Day Snapshot if one exists, otherwise
- * the current team-set/base-team composition) - solo events skip team resolution entirely
- * since they credit a student directly. Move a player off a team that's on record as having
- * won, and their credit disappears the next time this runs - no separate recalculation step.
+ * always the assigned roster - the current team-set/base-team composition a match was
+ * programmed against, ignoring any same-day Game Day Snapshot substitution - solo events skip
+ * team resolution entirely since they credit a student directly. Move a player off a team
+ * that's on record as having won, and their credit disappears the next time this runs - no
+ * separate recalculation step.
  */
-export function computeWinsFromSchedule(
-  matches: Match[],
-  unit: Unit,
-  dailyTeams: Record<string, DailyTeamSnapshot>,
-): Record<string, number> {
+export function computeWinsFromSchedule(matches: Match[], unit: Unit): Record<string, number> {
   const wins: Record<string, number> = {};
-
-  const resolveTeams = (m: Match) => dailyTeams[m.date_str]
-    ? dailyTeams[m.date_str].teams
-    : (m.team_set_id && m.team_set_id !== 'base'
-        ? unit.teamSets?.find((ts) => ts.id === m.team_set_id)?.teams
-        : unit.baseTeams);
 
   matches.forEach((m) => {
     if (m.match_type === 'solo') {
@@ -149,7 +151,7 @@ export function computeWinsFromSchedule(
       return;
     }
 
-    const teams = resolveTeams(m);
+    const teams = resolveMatchTeams(m, unit);
     if (!teams) return;
 
     if (m.match_type === 'minigame') {

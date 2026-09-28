@@ -741,7 +741,7 @@ export default function App() {
                   onPreviewStudentView={() => { setPreviewFromAdmin(true); setRoute('student'); setPublicView('dashboard'); }} 
                 />
               )
-              : adminView === 'schedule' ? <ScheduleStandings key={`sched-${unit.unit_id}`} unit={unit} schedule={schedule} roster={roster} dailyTeams={activeClass.dailyTeams || {}} isAdmin={true} onUpdateScore={handleUpdateScore} onAwardTeamWin={handleAwardTeamWin} onUnawardTeamWin={handleUnawardTeamWin} onToggleMatchComplete={handleToggleMatchComplete} onArchiveGroup={handleArchiveTeamSet} onUnarchiveGroup={handleUnarchiveTeamSet} />
+              : adminView === 'schedule' ? <ScheduleStandings key={`sched-${unit.unit_id}`} unit={unit} schedule={schedule} roster={roster} isAdmin={true} onUpdateScore={handleUpdateScore} onAwardTeamWin={handleAwardTeamWin} onUnawardTeamWin={handleUnawardTeamWin} onToggleMatchComplete={handleToggleMatchComplete} onArchiveGroup={handleArchiveTeamSet} onUnarchiveGroup={handleUnarchiveTeamSet} />
               : adminView === 'attendance' ? (
                   <div className="space-y-4">
                     <div className="flex gap-2">
@@ -826,7 +826,6 @@ export default function App() {
                   unit={unit}
                   teammatePoints={teammatePoints}
                   schedule={schedule}
-                  dailyTeams={activeClass.dailyTeams || {}}
                   onUpdateTeammatePoints={handleUpdateTeammatePoints}
                 />
               )
@@ -857,7 +856,7 @@ export default function App() {
                 }} 
               />
           ) : publicView === 'syllabus' ? <UnitSyllabus key={`syl-${unit.unit_id}`} syllabus={syllabus} unitName={unit.unit_name} />
-            : <PublicDashboard key={`pub-${unit.unit_id}`} unit={unit} schedule={schedule} dailyTeams={activeClass.dailyTeams || {}} />
+            : <PublicDashboard key={`pub-${unit.unit_id}`} unit={unit} schedule={schedule} />
           }
         </div>
       )}

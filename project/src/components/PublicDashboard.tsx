@@ -1,15 +1,14 @@
 import { useMemo, useState } from 'react';
 import { Search, Calendar, MapPin, Trophy, Users, ShieldAlert, History, User } from 'lucide-react';
-import type { Unit, ScheduleData, Match, DailyTeamSnapshot } from '../types';
+import type { Unit, ScheduleData, Match } from '../types';
 import { resolveMatchGroupId } from '../standings';
 
 interface Props {
   unit: Unit;
   schedule: ScheduleData;
-  dailyTeams: Record<string, DailyTeamSnapshot>;
 }
 
-export default function PublicDashboard({ unit, schedule, dailyTeams }: Props) {
+export default function PublicDashboard({ unit, schedule }: Props) {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeRosterId, setActiveRosterId] = useState<string>('base');
 
@@ -25,8 +24,8 @@ export default function PublicDashboard({ unit, schedule, dailyTeams }: Props) {
   // Standings are scoped to whichever roster arrangement is selected below (same id space
   // as the "Select Roster List" picker) so records from different team-sets never mix.
   const groupMatches = useMemo(
-    () => sortedAllMatches.filter(m => m.match_type !== 'solo' && resolveMatchGroupId(m, dailyTeams) === activeRosterId),
-    [sortedAllMatches, dailyTeams, activeRosterId]
+    () => sortedAllMatches.filter(m => m.match_type !== 'solo' && resolveMatchGroupId(m) === activeRosterId),
+    [sortedAllMatches, activeRosterId]
   );
 
   const soloRanked = useMemo(() => {
