@@ -1,7 +1,44 @@
 import { useEffect, useState } from 'react';
-import { MapPin, Clock, RefreshCw, Loader2, Pencil } from 'lucide-react';
+import { MapPin, Clock, RefreshCw, Loader2, Pencil, Cloud } from 'lucide-react';
 import type { SchoolSettings } from '../types';
-import { computeOutdoorScore, fetchForecastForClassTime, geocodeLocation, type HourlyForecast } from '../weather';
+import { computeOutdoorScore, fetchFiveDayForecast, geocodeLocation, type DayForecast } from '../weather';
+
+const headerPillClasses: Record<string, string> = {
+  red: 'bg-red-500/20 text-red-300',
+  orange: 'bg-orange-500/20 text-orange-300',
+  amber: 'bg-amber-500/20 text-amber-300',
+  lime: 'bg-lime-500/20 text-lime-300',
+  emerald: 'bg-emerald-500/20 text-emerald-300',
+};
+
+/** Compact "today's outdoor chances" pill for the admin header. Only renders once a school
+ *  location has been set up; clicking jumps the caller to the full Weather tab. */
+export function WeatherHeaderBadge({ settings, onClick }: { settings: SchoolSettings | null; onClick: () => void }) {
+  const [today, setToday] = useState<DayForecast | null>(null);
+
+  useEffect(() => {
+    if (!settings) { setToday(null); return; }
+    let cancelled = false;
+    fetchFiveDayForecast(settings.lat, settings.lon, settings.classTime)
+      .then((result) => { if (!cancelled) setToday(result[0] || null); })
+      .catch(() => { if (!cancelled) setToday(null); });
+    return () => { cancelled = true; };
+  }, [settings?.lat, settings?.lon, settings?.classTime]);
+
+  if (!settings || !today) return null;
+
+  const prediction = computeOutdoorScore(today.tempF, today.feelsLikeF, today.precipProbPercent, today.windMph);
+
+  return (
+    <button
+      onClick={onClick}
+      title="View weather forecast"
+      className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold transition hover:brightness-110 ${headerPillClasses[prediction.colorClass]}`}
+    >
+      <Cloud className="h-3.5 w-3.5" /> {Math.round(today.tempF)}°F · {prediction.label}
+    </button>
+  );
+}
 
 interface WeatherWidgetProps {
   settings: SchoolSettings | null;
@@ -100,7 +137,7 @@ function SettingsForm({
 
 export default function WeatherWidget({ settings, onSaveSettings }: WeatherWidgetProps) {
   const [editing, setEditing] = useState(false);
-  const [forecast, setForecast] = useState<HourlyForecast | null>(null);
+  const [days, setDays] = useState<DayForecast[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -108,8 +145,8 @@ export default function WeatherWidget({ settings, onSaveSettings }: WeatherWidge
     setLoading(true);
     setError(null);
     try {
-      const result = await fetchForecastForClassTime(s.lat, s.lon, s.classTime);
-      setForecast(result);
+      const result = await fetchFiveDayForecast(s.lat, s.lon, s.classTime);
+      setDays(result);
     } catch (err) {
       setError('Could not fetch the forecast right now. Please try again later.');
     } finally {
@@ -138,12 +175,13 @@ export default function WeatherWidget({ settings, onSaveSettings }: WeatherWidge
     );
   }
 
+  const forecast = days?.[0] || null;
   const prediction = forecast
     ? computeOutdoorScore(forecast.tempF, forecast.feelsLikeF, forecast.precipProbPercent, forecast.windMph)
     : null;
 
   return (
-    <div className="mx-auto max-w-md space-y-3">
+    <div className="mx-auto max-w-2xl space-y-3">
       <div className="flex items-center justify-between text-sm text-slate-500">
         <span className="flex items-center gap-1.5">
           <MapPin className="h-4 w-4" /> {settings.locationQuery}
@@ -160,40 +198,57 @@ export default function WeatherWidget({ settings, onSaveSettings }: WeatherWidge
         </div>
       </div>
 
-      {loading && !forecast ? (
+      {loading && !days ? (
         <div className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white p-8 text-slate-500">
           <Loader2 className="h-5 w-5 animate-spin" /> Loading forecast...
         </div>
       ) : error ? (
         <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>
       ) : forecast && prediction ? (
-        <div className={`rounded-xl border p-5 shadow-sm ${colorClasses[prediction.colorClass]}`}>
-          <p className="text-xs font-semibold uppercase tracking-wide opacity-75">
-            Forecast for {new Date(forecast.time).toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' })}
-          </p>
-          <p className="mt-1 text-2xl font-bold">{prediction.label}</p>
-          <div className="mt-3 h-2 w-full rounded-full bg-white/60">
-            <div
-              className={`h-2 rounded-full ${scoreBarClasses[prediction.colorClass]}`}
-              style={{ width: `${prediction.score}%` }}
-            />
+        <>
+          <div className={`mx-auto max-w-md rounded-xl border p-5 shadow-sm ${colorClasses[prediction.colorClass]}`}>
+            <p className="text-xs font-semibold uppercase tracking-wide opacity-75">
+              Forecast for {new Date(forecast.time).toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' })}
+            </p>
+            <p className="mt-1 text-2xl font-bold">{prediction.label}</p>
+            <div className="mt-3 h-2 w-full rounded-full bg-white/60">
+              <div
+                className={`h-2 rounded-full ${scoreBarClasses[prediction.colorClass]}`}
+                style={{ width: `${prediction.score}%` }}
+              />
+            </div>
+            <div className="mt-4 grid grid-cols-3 gap-3 text-center text-sm">
+              <div>
+                <p className="text-lg font-bold">{Math.round(forecast.tempF)}°F</p>
+                <p className="text-xs opacity-75">Temp</p>
+              </div>
+              <div>
+                <p className="text-lg font-bold">{Math.round(forecast.feelsLikeF)}°F</p>
+                <p className="text-xs opacity-75">Feels Like</p>
+              </div>
+              <div>
+                <p className="text-lg font-bold">{Math.round(forecast.precipProbPercent)}%</p>
+                <p className="text-xs opacity-75">Precip</p>
+              </div>
+            </div>
+            <p className="mt-3 text-xs opacity-75">Wind {Math.round(forecast.windMph)} mph</p>
           </div>
-          <div className="mt-4 grid grid-cols-3 gap-3 text-center text-sm">
-            <div>
-              <p className="text-lg font-bold">{Math.round(forecast.tempF)}°F</p>
-              <p className="text-xs opacity-75">Temp</p>
+
+          {days && days.length > 1 && (
+            <div className="grid grid-cols-5 gap-2">
+              {days.map((d) => {
+                const p = computeOutdoorScore(d.tempF, d.feelsLikeF, d.precipProbPercent, d.windMph);
+                return (
+                  <div key={d.dateStr} className={`rounded-lg border p-2.5 text-center shadow-sm ${colorClasses[p.colorClass]}`}>
+                    <p className="text-xs font-bold uppercase tracking-wide opacity-75">{d.weekday}</p>
+                    <p className="mt-1 text-lg font-bold">{Math.round(d.tempF)}°</p>
+                    <p className="mt-0.5 text-[11px] font-semibold leading-tight">{p.label}</p>
+                  </div>
+                );
+              })}
             </div>
-            <div>
-              <p className="text-lg font-bold">{Math.round(forecast.feelsLikeF)}°F</p>
-              <p className="text-xs opacity-75">Feels Like</p>
-            </div>
-            <div>
-              <p className="text-lg font-bold">{Math.round(forecast.precipProbPercent)}%</p>
-              <p className="text-xs opacity-75">Precip</p>
-            </div>
-          </div>
-          <p className="mt-3 text-xs opacity-75">Wind {Math.round(forecast.windMph)} mph</p>
-        </div>
+          )}
+        </>
       ) : null}
     </div>
   );

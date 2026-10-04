@@ -25,7 +25,7 @@ import WorkoutPlayer from './components/WorkoutPlayer';
 import MasterCalendarBuilder from './components/MasterCalendarBuilder';
 import DailyPlanner from './components/DailyPlanner';
 import WorkoutBuilder from './components/WorkoutBuilder';
-import WeatherWidget from './components/WeatherWidget';
+import WeatherWidget, { WeatherHeaderBadge } from './components/WeatherWidget';
 
 type AdminView = 'teams' | 'schedule' | 'attendance' | 'roster' | 'calendar' | 'builder' | 'leaderboards';
 type PublicView = 'syllabus' | 'dashboard' | 'leaderboards' | 'workout';
@@ -713,6 +713,12 @@ export default function App() {
           )}
 
           <div className="ml-auto flex items-center gap-2">
+            {route === 'admin' && (
+              <WeatherHeaderBadge
+                settings={schoolSettings}
+                onClick={() => { setAdminView('calendar'); setCalendarSubTab('weather'); }}
+              />
+            )}
             {route === 'admin' && <SaveStatusIndicator saving={saving} firestoreReady={firestoreReady} loadError={loadError} />}
             {route === 'admin' && (
               <button onClick={handleAdminLogout} title="Log out of admin" className="flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-1.5 text-sm font-bold text-slate-300 hover:bg-slate-700 hover:text-white transition">

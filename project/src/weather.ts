@@ -73,6 +73,54 @@ export async function fetchForecastForClassTime(lat: number, lon: number, classT
   };
 }
 
+export interface DayForecast extends HourlyForecast {
+  dateStr: string;
+  weekday: string;
+}
+
+/** The next N weekdays (Mon-Fri only, weekends skipped), starting today if today is a weekday. */
+function getNextWeekdays(count: number): string[] {
+  const dates: string[] = [];
+  const d = new Date();
+  while (dates.length < count) {
+    const day = d.getDay();
+    if (day !== 0 && day !== 6) {
+      dates.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+    }
+    d.setDate(d.getDate() + 1);
+  }
+  return dates;
+}
+
+/** School-week preview: the next 5 weekdays' forecasts at class time, skipping Saturday/Sunday. */
+export async function fetchFiveDayForecast(lat: number, lon: number, classTime: string): Promise<DayForecast[]> {
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,apparent_temperature,precipitation_probability,wind_speed_10m&temperature_unit=fahrenheit&wind_speed_unit=mph&forecast_days=7&timezone=auto`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Failed to fetch forecast');
+  const data = await res.json();
+  const times: string[] = data.hourly.time;
+
+  return getNextWeekdays(5).map((dateStr) => {
+    const targetTime = new Date(`${dateStr}T${classTime}`).getTime();
+    let bestIdx = 0;
+    let bestDiff = Infinity;
+    times.forEach((t, i) => {
+      if (!t.startsWith(dateStr)) return;
+      const diff = Math.abs(new Date(t).getTime() - targetTime);
+      if (diff < bestDiff) { bestDiff = diff; bestIdx = i; }
+    });
+    return {
+      dateStr,
+      weekday: new Date(`${dateStr}T00:00`).toLocaleDateString(undefined, { weekday: 'short' }),
+      time: times[bestIdx],
+      tempF: data.hourly.temperature_2m[bestIdx],
+      feelsLikeF: data.hourly.apparent_temperature[bestIdx],
+      precipProbPercent: data.hourly.precipitation_probability[bestIdx],
+      windMph: data.hourly.wind_speed_10m[bestIdx],
+    };
+  });
+}
+
 /** Nominatim (OpenStreetMap) - free, no API key, one-time lookup when the admin sets a location. */
 export async function geocodeLocation(query: string): Promise<{ lat: number; lon: number; displayName: string } | null> {
   const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`;
