@@ -280,10 +280,19 @@ export interface ClassData {
   roster: Player[];
   logs: DailyLogMap;
   gradebook?: Record<string, DailyLogMap>;
-  dailyTeams?: Record<string, DailyTeamSnapshot>; 
+  dailyTeams?: Record<string, DailyTeamSnapshot>;
   quarterHistory: QuarterHistoryMap;
   floorGrid: FloorGrid;
   units: UnitData[];
   activeUnitId: string;
   masterCalendar?: CalendarDay[];
+}
+
+/** School-wide (not per-class) location + typical class time, used to forecast conditions for
+ *  the actual PE period rather than just "right now". Set once by the admin. */
+export interface SchoolSettings {
+  locationQuery: string;
+  lat: number;
+  lon: number;
+  classTime: string;
 }

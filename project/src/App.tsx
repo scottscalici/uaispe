@@ -6,12 +6,12 @@ import {
 import type {
   ClassData, Unit, ScheduleData, SyllabusData, DailyLogMap, DailyLog, ScoreType,
   QuarterHistoryMap, AttendanceMap, Player, Team, Match, UnitData, DailyTeamSnapshot,
-  WorkoutLibrary, Exercise, Workout
+  WorkoutLibrary, Exercise, Workout, SchoolSettings
 } from './types';
 import { initialClasses } from './data';
 import { seedExercises, seedWorkouts } from './workoutSeedData';
 import { emptyLog } from './grading';
-import { loadAppMeta, ensureInitialData, subscribeToClasses, saveClass, subscribeToWorkoutLibrary, saveWorkoutLibrary } from './firestore';
+import { loadAppMeta, ensureInitialData, subscribeToClasses, saveClass, subscribeToWorkoutLibrary, saveWorkoutLibrary, subscribeToSchoolSettings, saveSchoolSettings } from './firestore';
 import TeamManager from './components/TeamManager';
 import ScheduleStandings from './components/ScheduleStandings';
 import UnitSyllabus from './components/UnitSyllabus';
@@ -25,6 +25,7 @@ import WorkoutPlayer from './components/WorkoutPlayer';
 import MasterCalendarBuilder from './components/MasterCalendarBuilder';
 import DailyPlanner from './components/DailyPlanner';
 import WorkoutBuilder from './components/WorkoutBuilder';
+import WeatherWidget from './components/WeatherWidget';
 
 type AdminView = 'teams' | 'schedule' | 'attendance' | 'roster' | 'calendar' | 'builder' | 'leaderboards';
 type PublicView = 'syllabus' | 'dashboard' | 'leaderboards' | 'workout';
@@ -58,7 +59,7 @@ export default function App() {
 
   const [adminView, setAdminView] = useState<AdminView>('teams');
   const [logsSubTab, setLogsSubTab] = useState<'daily' | 'exceptions'>('daily');
-  const [calendarSubTab, setCalendarSubTab] = useState<'calendar' | 'planner' | 'workouts'>('calendar');
+  const [calendarSubTab, setCalendarSubTab] = useState<'calendar' | 'planner' | 'workouts' | 'weather'>('calendar');
   const [publicView, setPublicView] = useState<PublicView>('syllabus');
   const [classes, setClasses] = useState<ClassData[]>(initialClasses);
   const [activeClassId, setActiveClassId] = useState<string>(initialClasses[0].id);
@@ -80,6 +81,8 @@ export default function App() {
   const [workoutLibrary, setWorkoutLibrary] = useState<WorkoutLibrary>({ exercises: seedExercises, workouts: seedWorkouts });
   const skipNextWorkoutSave = useRef(true);
   const workoutSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [schoolSettings, setSchoolSettings] = useState<SchoolSettings | null>(null);
 
   const activeClass = classes.find((c) => c.id === activeClassId) || classes[0];
 
@@ -261,6 +264,16 @@ export default function App() {
     });
     return unsubscribe;
   }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToSchoolSettings(setSchoolSettings);
+    return unsubscribe;
+  }, []);
+
+  const handleSaveSchoolSettings = (settings: SchoolSettings) => {
+    setSchoolSettings(settings);
+    void saveSchoolSettings(settings);
+  };
 
   useEffect(() => {
     if (skipNextWorkoutSave.current) { skipNextWorkoutSave.current = false; return; }
@@ -810,13 +823,21 @@ export default function App() {
                       >
                         <Activity className="h-4 w-4" /> Workouts
                       </button>
+                      <button
+                        onClick={() => setCalendarSubTab('weather')}
+                        className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${calendarSubTab === 'weather' ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                      >
+                        <Cloud className="h-4 w-4" /> Weather
+                      </button>
                     </div>
                     {calendarSubTab === 'calendar' ? (
                       <MasterCalendarBuilder key={`cal-${activeClassId}`} calendar={activeClass.masterCalendar || []} classId={activeClassId} onSave={(cal) => updateClass(c => ({ ...c, masterCalendar: cal }))} />
                     ) : calendarSubTab === 'planner' ? (
                       <DailyPlanner key={`plan-${activeClassId}`} calendar={activeClass.masterCalendar || []} units={activeClass.units || []} workoutLibrary={workoutLibrary} onUpdateCalendarDay={(dateStr, updates) => updateClass(c => ({ ...c, masterCalendar: (c.masterCalendar || []).map(day => day.fecha === dateStr ? { ...day, ...updates } : day) }))} onAssignWorkout={handleAssignWorkout} />
-                    ) : (
+                    ) : calendarSubTab === 'workouts' ? (
                       <WorkoutBuilder library={workoutLibrary} onSaveExercise={handleSaveExercise} onDeleteExercise={handleDeleteExercise} onSaveWorkout={handleSaveWorkout} onDeleteWorkout={handleDeleteWorkout} />
+                    ) : (
+                      <WeatherWidget settings={schoolSettings} onSaveSettings={handleSaveSchoolSettings} />
                     )}
                   </div>
                 )

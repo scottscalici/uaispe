@@ -5,7 +5,7 @@ import {
   onSnapshot,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import type { ClassData, WorkoutLibrary } from './types';
+import type { ClassData, WorkoutLibrary, SchoolSettings } from './types';
 import { initialClasses } from './data';
 import { seedExercises, seedWorkouts } from './workoutSeedData';
 import { centralDb } from './firebase';
@@ -13,6 +13,8 @@ const CLASSES_COLLECTION = 'pe_classes';
 const META_DOC = 'app_meta';
 const WORKOUT_LIBRARY_COLLECTION = 'pe_workout_library';
 const WORKOUT_LIBRARY_DOC = 'data';
+const SETTINGS_COLLECTION = 'pe_settings';
+const SCHOOL_SETTINGS_DOC = 'school';
 
 export interface AppMeta {
   classIds: string[];
@@ -138,6 +140,20 @@ export function subscribeToWorkoutLibrary(
 export async function saveWorkoutLibrary(library: WorkoutLibrary): Promise<void> {
   const ref = doc(db, WORKOUT_LIBRARY_COLLECTION, WORKOUT_LIBRARY_DOC);
   await setDoc(ref, stripUndefined(library));
+}
+
+export function subscribeToSchoolSettings(
+  onUpdate: (settings: SchoolSettings | null) => void,
+): () => void {
+  const ref = doc(db, SETTINGS_COLLECTION, SCHOOL_SETTINGS_DOC);
+  return onSnapshot(ref, (snap) => {
+    onUpdate(snap.exists() ? (snap.data() as SchoolSettings) : null);
+  });
+}
+
+export async function saveSchoolSettings(settings: SchoolSettings): Promise<void> {
+  const ref = doc(db, SETTINGS_COLLECTION, SCHOOL_SETTINGS_DOC);
+  await setDoc(ref, stripUndefined(settings));
 }
 
 function stripUndefined(obj: unknown): unknown {
