@@ -10,14 +10,16 @@ const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(ma
  * A weighted "will we go outside" score rather than a rigid temperature ladder - it naturally
  * handles combinations no one thought to write a rule for (65F with light rain and calm wind).
  * Centered on a 70F ideal (both actual and feels-like - the colder of the two is the limiting
- * factor), penalized for precipitation chance and wind, with a hard floor when there's real
- * precipitation risk and it's genuinely cold.
+ * factor). Cold is penalized much more steeply than warmth - 55-60F was described as only a
+ * "decent chance" even with zero precipitation, while a hot day was never called a dealbreaker -
+ * then both are further knocked down for precipitation chance and wind, with a hard floor when
+ * there's real precipitation risk and it's genuinely cold.
  */
 export function computeOutdoorScore(tempF: number, feelsLikeF: number, precipProbPercent: number, windMph: number): OutdoorPrediction {
   const effectiveTemp = Math.min(tempF, feelsLikeF);
 
   let score = 100;
-  score -= Math.abs(effectiveTemp - 70) * 2;
+  score -= effectiveTemp < 70 ? (70 - effectiveTemp) * 3 : (effectiveTemp - 70) * 1;
   if (precipProbPercent > 30) score -= (precipProbPercent - 30) * 1.2;
   if (windMph > 15) score -= (windMph - 15) * 1.5;
 
