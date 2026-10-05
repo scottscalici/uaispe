@@ -26,6 +26,7 @@ import MasterCalendarBuilder from './components/MasterCalendarBuilder';
 import DailyPlanner from './components/DailyPlanner';
 import WorkoutBuilder from './components/WorkoutBuilder';
 import WeatherWidget, { WeatherHeaderBadge } from './components/WeatherWidget';
+import VotePage from './components/VotePage';
 
 type AdminView = 'teams' | 'schedule' | 'attendance' | 'roster' | 'calendar' | 'builder' | 'leaderboards';
 type PublicView = 'syllabus' | 'dashboard' | 'leaderboards' | 'workout';
@@ -50,7 +51,8 @@ const genMatchId = () => Date.now() + Math.floor(Math.random() * 100000);
 const ADMIN_SESSION_KEY = 'pe_admin_authed';
 
 export default function App() {
-  const [route, setRoute] = useState<'student' | 'admin_login' | 'admin'>(() => {
+  const [route, setRoute] = useState<'student' | 'admin_login' | 'admin' | 'vote'>(() => {
+    if (window.location.hash.startsWith('#vote')) return 'vote';
     if (window.location.hash !== '#admin') return 'student';
     return sessionStorage.getItem(ADMIN_SESSION_KEY) === '1' ? 'admin' : 'admin_login';
   });
@@ -635,6 +637,10 @@ export default function App() {
     setRoute('admin');
   };
 
+  if (route === 'vote') {
+    return <VotePage />;
+  }
+
   if (route === 'admin_login') {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-slate-100 p-4">
@@ -853,6 +859,8 @@ export default function App() {
                   allUnits={activeClass.units || []}
                   teammatePoints={teammatePoints}
                   onUpdateTeammatePoints={handleUpdateTeammatePoints}
+                  activeClassId={activeClassId}
+                  activeUnitId={activeUnitData.id}
                 />
               )
               : <UnitScheduleBuilder key={`builder-${unit.unit_id}`} unitName={unit.unit_name} onUpdateUnitName={handleUpdateUnitName} syllabus={syllabus} schedule={schedule} teamNames={teamNames} teamSets={unit.teamSets} calendar={activeClass.masterCalendar || []} roster={roster} unit={unit} allUnits={activeClass.units} dailyTeams={activeClass.dailyTeams || {}} onUpdateSyllabus={handleUpdateSyllabus} onAddMatch={handleAddMatch} onUpdateMatch={handleUpdateMatch} onDeleteMatch={handleDeleteMatch} onGenerateTeams={handleGenerateTeams} onMovePlayer={handleMovePlayer} onDeleteTeamSet={handleDeleteTeamSet} onSetParentSportType={handleSetParentSportType} />}

@@ -3,6 +3,7 @@ import {
   getDoc,
   setDoc,
   onSnapshot,
+  runTransaction,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import type { ClassData, WorkoutLibrary, SchoolSettings } from './types';
@@ -15,6 +16,7 @@ const WORKOUT_LIBRARY_COLLECTION = 'pe_workout_library';
 const WORKOUT_LIBRARY_DOC = 'data';
 const SETTINGS_COLLECTION = 'pe_settings';
 const SCHOOL_SETTINGS_DOC = 'school';
+const VOTES_COLLECTION = 'pe_teammate_votes';
 
 export interface AppMeta {
   classIds: string[];
@@ -154,6 +156,40 @@ export function subscribeToSchoolSettings(
 export async function saveSchoolSettings(settings: SchoolSettings): Promise<void> {
   const ref = doc(db, SETTINGS_COLLECTION, SCHOOL_SETTINGS_DOC);
   await setDoc(ref, stripUndefined(settings));
+}
+
+export type VoteResult = 'ok' | 'already_voted';
+
+/** One teammate vote, keyed by classId_unitId_voterId so a repeat submission for the same
+ *  voter/unit is simply rejected rather than counted twice - the lockout lives here, not in
+ *  the browser, so switching devices can't get around it. */
+export async function submitTeammateVote(
+  classId: string,
+  unitId: string,
+  voterId: string,
+  votedForId: string,
+): Promise<VoteResult> {
+  const voteRef = doc(db, VOTES_COLLECTION, `${classId}_${unitId}_${voterId}`);
+  const classRef = doc(db, CLASSES_COLLECTION, classId);
+
+  return runTransaction(db, async (tx) => {
+    const voteSnap = await tx.get(voteRef);
+    if (voteSnap.exists()) return 'already_voted';
+
+    const classSnap = await tx.get(classRef);
+    if (!classSnap.exists()) throw new Error('Class not found');
+    const classData = classSnap.data() as ClassData;
+    const units = classData.units.map((u) =>
+      u.id === unitId
+        ? { ...u, teammatePoints: { ...u.teammatePoints, [votedForId]: (u.teammatePoints[votedForId] || 0) + 1 } }
+        : u
+    );
+
+    tx.set(voteRef, { classId, unitId, voterId, votedForId, timestamp: Date.now() });
+    tx.update(classRef, { units });
+
+    return 'ok';
+  });
 }
 
 function stripUndefined(obj: unknown): unknown {

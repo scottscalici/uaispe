@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Trophy, Star, ChevronDown, ChevronUp, Plus, Minus, History, CalendarDays } from 'lucide-react';
+import { Trophy, Star, ChevronDown, ChevronUp, Plus, Minus, History, CalendarDays, Link2, Check } from 'lucide-react';
 import type { Player, Unit, UnitData, TeammatePointMap, Match } from '../types';
 import { computeWinsFromSchedule, resolveMatchTeams } from '../standings';
 
@@ -8,13 +8,35 @@ interface Props {
   allUnits: UnitData[];
   teammatePoints: TeammatePointMap;
   onUpdateTeammatePoints: (playerId: string, delta: number) => void;
+  activeClassId: string;
+  activeUnitId: string;
 }
 
 export default function Leaderboards({
-  roster, allUnits, teammatePoints, onUpdateTeammatePoints
+  roster, allUnits, teammatePoints, onUpdateTeammatePoints, activeClassId, activeUnitId
 }: Props) {
   const [activeTab, setActiveTab] = useState<'wins' | 'teammates'>('wins');
   const [expandedPlayerId, setExpandedPlayerId] = useState<string | null>(null);
+  const [copiedLink, setCopiedLink] = useState<'universal' | 'unit' | null>(null);
+
+  const activeUnitName = allUnits.find((u) => u.id === activeUnitId)?.unit.unit_name;
+
+  const copyLink = async (link: string, which: 'universal' | 'unit') => {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopiedLink(which);
+      setTimeout(() => setCopiedLink(null), 2000);
+    } catch {
+      window.prompt('Copy this link to send to students:', link);
+    }
+  };
+
+  const handleCopyVoteLink = () => copyLink(`${window.location.origin}${window.location.pathname}#vote`, 'universal');
+
+  const handleCopyUnitVoteLink = () => copyLink(
+    `${window.location.origin}${window.location.pathname}#vote?class=${encodeURIComponent(activeClassId)}&unit=${encodeURIComponent(activeUnitId)}`,
+    'unit',
+  );
 
   // Always computed fresh from every unit's schedule + each team-set's assigned roster - never
   // stored, so there's nothing to keep in sync when a roster changes. A student's total for the
@@ -90,10 +112,30 @@ export default function Leaderboards({
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
           <Trophy className="w-6 h-6 text-amber-500" /> All-Time Leaderboards
         </h2>
+        <div className="flex items-center gap-2">
+          {activeUnitName && (
+            <button
+              onClick={handleCopyUnitVoteLink}
+              title={`Skips straight to picking yourself - locked to "${activeUnitName}"`}
+              className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100"
+            >
+              {copiedLink === 'unit' ? <Check className="w-4 h-4" /> : <Link2 className="w-4 h-4" />}
+              {copiedLink === 'unit' ? 'Copied!' : `Copy Link for "${activeUnitName}"`}
+            </button>
+          )}
+          <button
+            onClick={handleCopyVoteLink}
+            title="Students pick their own class and unit"
+            className="flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100"
+          >
+            {copiedLink === 'universal' ? <Check className="w-4 h-4" /> : <Link2 className="w-4 h-4" />}
+            {copiedLink === 'universal' ? 'Copied!' : 'Copy Universal Link'}
+          </button>
+        </div>
       </div>
 
       <div className="flex bg-white rounded-xl shadow-sm border border-slate-200 p-1">
