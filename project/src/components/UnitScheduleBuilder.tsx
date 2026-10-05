@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Plus, Trash2, BookOpen, CalendarPlus, Save, Swords, Users, Trophy, Pencil, X, Wand2, User, Link as LinkIcon, Unlink, CalendarDays, ListTree } from 'lucide-react';
+import { Plus, Trash2, BookOpen, CalendarPlus, Save, Swords, Users, Trophy, Pencil, X, Wand2, User, Link as LinkIcon, Unlink, CalendarDays, ListTree, GitMerge } from 'lucide-react';
 import type { SyllabusData, ScheduleData, Match, CalendarDay, MatchType, TeamSet, Unit, Player, Team, UnitData, DailyTeamSnapshot } from '../types';
 import TeamCreator from './TeamCreator';
 
@@ -93,7 +93,7 @@ export default function UnitScheduleBuilder({
       ) : tab === 'generator' ? (
         <TeamCreator roster={roster} unit={unit} onGenerate={onGenerateTeams} onMovePlayer={onMovePlayer} onDeleteTeamSet={onDeleteTeamSet} />
       ) : (
-        <ScheduleEditor schedule={schedule} teamNames={teamNames} teamSets={teamSets} calendar={calendar} roster={roster} onAddMatch={onAddMatch} onUpdateMatch={onUpdateMatch} onDeleteMatch={onDeleteMatch} />
+        <ScheduleEditor schedule={schedule} teamNames={teamNames} teamSets={teamSets} unit={unit} calendar={calendar} roster={roster} onAddMatch={onAddMatch} onUpdateMatch={onUpdateMatch} onDeleteMatch={onDeleteMatch} />
       )}
     </div>
   );
@@ -409,11 +409,18 @@ function ActivityLog({ unit, schedule, allUnits, calendar, dailyTeams }: any) {
                         );
                       }
                       if (m.match_type === 'solo') {
+                        const soloRosterNames = dayUnit.baseTeams.flatMap((t: Team) => t.players)
+                          .filter((p) => (m.winner_player_ids || []).includes(p.id))
+                          .map((p) => p.name);
                         return (
                           <div key={m.id} className="flex flex-wrap items-center gap-2 rounded-md bg-purple-50/50 border border-purple-100 px-2.5 py-1.5 text-xs">
-                            <span className="flex items-center gap-1 font-bold text-purple-700"><User className="h-3 w-3" /> Individual Event</span>
+                            <span className="flex items-center gap-1 font-bold text-purple-700"><User className="h-3 w-3" /> {m.home_team || 'Individual Event'}</span>
                             <span className="text-slate-500">{m.time} - {m.location}</span>
-                            <span className="flex items-center gap-1 font-semibold text-slate-700"><Trophy className="h-3 w-3 text-amber-500" /> {m.away_team}</span>
+                            {soloRosterNames.length > 0 ? (
+                              <span className="flex items-center gap-1 font-semibold text-slate-700"><Trophy className="h-3 w-3 text-amber-500" /> {soloRosterNames.join(' & ')}</span>
+                            ) : (
+                              <span className="italic text-slate-400">Winner pending</span>
+                            )}
                           </div>
                         );
                       }
@@ -444,6 +451,7 @@ function ScheduleEditor({
   schedule,
   teamNames,
   teamSets,
+  unit,
   calendar,
   roster,
   onAddMatch,
@@ -453,6 +461,7 @@ function ScheduleEditor({
   schedule: ScheduleData;
   teamNames: string[];
   teamSets: TeamSet[];
+  unit: Unit;
   calendar: CalendarDay[];
   roster: Player[];
   onAddMatch: (m: Omit<Match, 'id'>) => void;
@@ -463,7 +472,7 @@ function ScheduleEditor({
 
   const [matchType, setMatchType] = useState<MatchType>('standard');
   const [standardTeamSetId, setStandardTeamSetId] = useState<string>('base');
-  
+
   const sortedMatches = useMemo(() => {
     return [...schedule.matches].sort((a, b) => {
       if (a.date_str !== b.date_str) return a.date_str.localeCompare(b.date_str);
@@ -471,11 +480,15 @@ function ScheduleEditor({
     });
   }, [schedule.matches]);
 
+  const availableTeamObjects: Team[] = useMemo(() => {
+    if (standardTeamSetId === 'base') return unit.baseTeams;
+    return teamSets.find(ts => ts.id === standardTeamSetId)?.teams || [];
+  }, [standardTeamSetId, unit.baseTeams, teamSets]);
+
   const availableTeams = useMemo(() => {
     if (standardTeamSetId === 'base') return teamNames;
-    const selectedSet = teamSets.find(ts => ts.id === standardTeamSetId);
-    return selectedSet ? selectedSet.teams.map(t => t.name) : [];
-  }, [standardTeamSetId, teamNames, teamSets]);
+    return availableTeamObjects.map(t => t.name);
+  }, [standardTeamSetId, teamNames, availableTeamObjects]);
 
   const availableTeamsWithTBD = ['TBD', ...availableTeams];
 
@@ -483,9 +496,17 @@ function ScheduleEditor({
   const [away, setAway] = useState('');
   const [teamSetId, setTeamSetId] = useState('base');
   const [roundName, setRoundName] = useState('Quarterfinals');
-  const [soloWinnerId, setSoloWinnerId] = useState('');
+  const [soloEventName, setSoloEventName] = useState('');
+  const [mergedHomeIds, setMergedHomeIds] = useState<number[]>([]);
+  const [mergedAwayIds, setMergedAwayIds] = useState<number[]>([]);
 
-  const sortedRoster = useMemo(() => [...roster].sort((a, b) => a.name.localeCompare(b.name)), [roster]);
+  const toggleMergedTeam = (side: 'home' | 'away', teamId: number) => {
+    const current = side === 'home' ? mergedHomeIds : mergedAwayIds;
+    const next = current.includes(teamId) ? current.filter(id => id !== teamId) : [...current, teamId];
+    (side === 'home' ? setMergedHomeIds : setMergedAwayIds)(next);
+    const defaultName = next.map(id => availableTeamObjects.find(t => t.id === id)?.name).filter(Boolean).join(' / ');
+    (side === 'home' ? setHome : setAway)(defaultName);
+  };
 
   const [date, setDate] = useState('');
   const [time, setTime] = useState('11:15');
@@ -515,7 +536,13 @@ function ScheduleEditor({
       setAway(m.away_team);
       setRoundName(m.round_name || '');
     } else if (m.match_type === 'solo') {
-      setSoloWinnerId(m.winner_player_id || '');
+      setSoloEventName(m.home_team || '');
+    } else if (m.match_type === 'merged') {
+      setStandardTeamSetId(m.team_set_id || 'base');
+      setHome(m.home_team);
+      setAway(m.away_team);
+      setMergedHomeIds(m.merged_home_team_ids || []);
+      setMergedAwayIds(m.merged_away_team_ids || []);
     }
   };
 
@@ -524,7 +551,9 @@ function ScheduleEditor({
     setDate('');
     setHome('');
     setAway('');
-    setSoloWinnerId('');
+    setSoloEventName('');
+    setMergedHomeIds([]);
+    setMergedAwayIds([]);
   };
 
   const handleSave = () => {
@@ -553,24 +582,41 @@ function ScheduleEditor({
       if (!home || !away || !roundName) return;
       matchData = { ...matchData, team_set_id: standardTeamSetId, home_team: home, away_team: away, round_name: roundName };
     } else if (matchType === 'solo') {
-      if (!soloWinnerId) return;
-      const winner = roster.find(p => p.id === soloWinnerId);
-      matchData = { ...matchData, home_team: 'Individual Event', away_team: winner?.name || 'Unknown', winner_player_id: soloWinnerId };
+      matchData = { ...matchData, home_team: soloEventName || 'Individual Event', away_team: '' };
+    } else if (matchType === 'merged') {
+      if (mergedHomeIds.length < 2 || mergedAwayIds.length < 2 || !home || !away) return;
+      matchData = {
+        ...matchData,
+        team_set_id: standardTeamSetId,
+        home_team: home,
+        away_team: away,
+        merged_home_team_ids: mergedHomeIds,
+        merged_away_team_ids: mergedAwayIds,
+      };
     }
-
-    const completed = matchType === 'solo';
 
     if (editingMatchId) {
       onUpdateMatch(editingMatchId, matchData);
       setEditingMatchId(null);
     } else {
-      onAddMatch({ ...matchData, home_score: null, away_score: null, completed });
+      onAddMatch({
+        ...matchData,
+        home_score: null,
+        away_score: null,
+        completed: false,
+        ...(matchType === 'solo' ? { winner_player_ids: [] } : {}),
+      });
     }
     setDate('');
-    setSoloWinnerId('');
+    setSoloEventName('');
   };
 
-  const isFormValid = date && (matchType === 'minigame' ? teamSetId : matchType === 'solo' ? soloWinnerId : (home && away));
+  const isFormValid = date && (
+    matchType === 'minigame' ? teamSetId
+    : matchType === 'solo' ? true
+    : matchType === 'merged' ? (mergedHomeIds.length >= 2 && mergedAwayIds.length >= 2 && home && away)
+    : (home && away)
+  );
 
   return (
     <div className="space-y-4">
@@ -604,6 +650,12 @@ function ScheduleEditor({
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${matchType === 'solo' ? 'bg-purple-100 text-purple-800 shadow-sm border border-purple-200' : 'text-slate-500 hover:text-slate-700'}`}
             >
               <User className="w-3.5 h-3.5" /> Solo Event
+            </button>
+            <button
+              onClick={() => setMatchType('merged')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${matchType === 'merged' ? 'bg-emerald-100 text-emerald-800 shadow-sm border border-emerald-200' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              <GitMerge className="w-3.5 h-3.5" /> Merged Teams
             </button>
           </div>
         </div>
@@ -666,14 +718,58 @@ function ScheduleEditor({
                 {teamSets.map((ts) => <option key={ts.id} value={ts.id}>{ts.name} ({ts.teams.length} teams)</option>)}
               </select>
             </label>
-          ) : (
+          ) : matchType === 'solo' ? (
             <label className="block sm:col-span-2">
-              <span className="mb-1 block text-xs font-semibold uppercase text-purple-500">Winning Student</span>
-              <select value={soloWinnerId} onChange={(e) => setSoloWinnerId(e.target.value)} className="w-full rounded-md border border-purple-300 px-3 py-2 text-sm bg-purple-50 font-semibold text-purple-900 focus:outline-none focus:ring-1 focus:ring-purple-500">
-                <option value="" disabled>Select a student...</option>
-                {sortedRoster.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
+              <span className="mb-1 block text-xs font-semibold uppercase text-purple-500">Event Name</span>
+              <input
+                type="text"
+                value={soloEventName}
+                onChange={(e) => setSoloEventName(e.target.value)}
+                placeholder="e.g. Game 1, Round 2, Dodgeball Finals"
+                className="w-full rounded-md border border-purple-300 bg-purple-50 px-3 py-2 text-sm font-semibold text-purple-900 focus:outline-none focus:ring-1 focus:ring-purple-500"
+              />
+              <p className="mt-1 text-xs text-purple-400">Pick the winner(s) later from the Scores tab once the event is finished.</p>
             </label>
+          ) : (
+            <>
+              {teamSets.length > 0 && (
+                 <label className="block sm:col-span-2 lg:col-span-3 border-b border-slate-100 pb-3">
+                   <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Match Roster Source</span>
+                   <select
+                     value={standardTeamSetId}
+                     onChange={(e) => {
+                       setStandardTeamSetId(e.target.value);
+                       setMergedHomeIds([]);
+                       setMergedAwayIds([]);
+                       setHome('');
+                       setAway('');
+                     }}
+                     className="w-full md:w-1/2 rounded-md border border-slate-300 px-3 py-2 text-sm font-bold text-blue-700 bg-white shadow-sm"
+                   >
+                     <option value="base">🏆 Default Unit Teams</option>
+                     {teamSets.map((ts) => <option key={ts.id} value={ts.id}>🔄 {ts.name}</option>)}
+                   </select>
+                 </label>
+              )}
+
+              <div className="block sm:col-span-2 lg:col-span-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <MergedTeamPicker label="Home Side" activeClass="bg-emerald-600 text-white border-emerald-600" teams={availableTeamObjects} selectedIds={mergedHomeIds} onToggle={(id) => toggleMergedTeam('home', id)} />
+                <MergedTeamPicker label="Away Side" activeClass="bg-rose-600 text-white border-rose-600" teams={availableTeamObjects} selectedIds={mergedAwayIds} onToggle={(id) => toggleMergedTeam('away', id)} />
+              </div>
+
+              <label className="block">
+                <span className="mb-1 block text-xs font-semibold uppercase text-emerald-600">Home Display Name</span>
+                <input type="text" value={home} onChange={(e) => setHome(e.target.value)} placeholder="e.g. Baltroit Ryans" className="w-full rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-900 focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs font-semibold uppercase text-rose-600">Away Display Name</span>
+                <input type="text" value={away} onChange={(e) => setAway(e.target.value)} placeholder="e.g. Combined Crushers" className="w-full rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-500" />
+              </label>
+
+              <p className="block sm:col-span-2 lg:col-span-3 text-xs text-slate-400 italic">
+                Only the display name is cosmetic - standings, wins, and scores still credit each selected team on its own, independently.
+              </p>
+            </>
           )}
           
           <label className="block">
@@ -722,6 +818,15 @@ function ScheduleEditor({
         </div>
       </div>
 
+      {matchType === 'merged' && !editingMatchId && (
+        <RotationGenerator
+          teams={availableTeamObjects}
+          standardTeamSetId={standardTeamSetId}
+          upcomingSchoolDays={upcomingSchoolDays}
+          onGenerate={(matches) => matches.forEach(onAddMatch)}
+        />
+      )}
+
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <table className="w-full text-sm">
           <thead className="bg-slate-100 text-xs uppercase text-slate-600">
@@ -735,7 +840,7 @@ function ScheduleEditor({
           </thead>
           <tbody className="divide-y divide-slate-100">
             {sortedMatches.map((m) => (
-              <tr key={m.id} className={`transition hover:bg-slate-50 ${m.match_type === 'minigame' ? 'bg-indigo-50/30' : m.match_type === 'bracket' ? 'bg-amber-50/30' : m.match_type === 'solo' ? 'bg-purple-50/30' : ''}`}>
+              <tr key={m.id} className={`transition hover:bg-slate-50 ${m.match_type === 'minigame' ? 'bg-indigo-50/30' : m.match_type === 'bracket' ? 'bg-amber-50/30' : m.match_type === 'solo' ? 'bg-purple-50/30' : m.match_type === 'merged' ? 'bg-emerald-50/30' : ''}`}>
                 <td className="px-4 py-3">{m.date_str}</td>
                 <td className="px-4 py-3 font-semibold text-slate-600">{m.time}</td>
                 <td className="px-4 py-3 font-medium text-slate-800">
@@ -747,11 +852,21 @@ function ScheduleEditor({
                   ) : m.match_type === 'solo' ? (
                     <div className="flex items-center gap-1.5 text-purple-700">
                       <User className="w-4 h-4" />
-                      <span>Individual Event <span className="text-slate-500 font-normal">— Winner: {m.away_team}</span></span>
+                      <span>
+                        {m.home_team || 'Individual Event'}
+                        <span className="text-slate-500 font-normal">
+                          {' '}— {(m.winner_player_ids?.length ?? 0) > 0 ? `${m.winner_player_ids!.length} winner(s) picked` : 'Winner pending'}
+                        </span>
+                      </span>
                     </div>
                   ) : m.match_type === 'bracket' ? (
                     <div className="flex flex-col">
                       <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">{m.round_name}</span>
+                      <span>{m.home_team} <span className="text-slate-400 text-xs mx-1">vs</span> {m.away_team}</span>
+                    </div>
+                  ) : m.match_type === 'merged' ? (
+                    <div className="flex items-center gap-1.5 text-emerald-700">
+                      <GitMerge className="w-4 h-4" />
                       <span>{m.home_team} <span className="text-slate-400 text-xs mx-1">vs</span> {m.away_team}</span>
                     </div>
                   ) : (
@@ -779,6 +894,165 @@ function ScheduleEditor({
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+function MergedTeamPicker({ label, activeClass, teams, selectedIds, onToggle }: {
+  label: string;
+  activeClass: string;
+  teams: Team[];
+  selectedIds: number[];
+  onToggle: (id: number) => void;
+}) {
+  return (
+    <div>
+      <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">
+        {label} <span className="normal-case font-normal text-slate-400">(tap 2+ to merge)</span>
+      </span>
+      <div className="flex flex-wrap gap-1.5">
+        {teams.map((t) => {
+          const active = selectedIds.includes(t.id);
+          return (
+            <button
+              type="button"
+              key={t.id}
+              onClick={() => onToggle(t.id)}
+              className={`rounded-md border px-2.5 py-1.5 text-xs font-bold transition ${active ? activeClass : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'}`}
+            >
+              {t.name}
+            </button>
+          );
+        })}
+        {teams.length === 0 && <span className="text-xs italic text-slate-400">No teams available</span>}
+      </div>
+    </div>
+  );
+}
+
+const ROTATION_PAIRINGS: [[number, number], [number, number]][] = [
+  [[0, 1], [2, 3]],
+  [[0, 2], [1, 3]],
+  [[0, 3], [1, 2]],
+];
+
+function RotationGenerator({ teams, standardTeamSetId, upcomingSchoolDays, onGenerate }: {
+  teams: Team[];
+  standardTeamSetId: string;
+  upcomingSchoolDays: CalendarDay[];
+  onGenerate: (matches: Omit<Match, 'id'>[]) => void;
+}) {
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [dates, setDates] = useState<[string, string, string]>(['', '', '']);
+  const [time, setTime] = useState('11:15');
+  const [location, setLocation] = useState('Main Gym');
+
+  const toggle = (id: number) => setSelectedIds((prev) =>
+    prev.includes(id) ? prev.filter((x) => x !== id) : prev.length < 4 ? [...prev, id] : prev
+  );
+
+  const canGenerate = selectedIds.length === 4 && dates.every((d) => !!d);
+
+  const handleGenerate = () => {
+    if (!canGenerate) return;
+    const nameOf = (id: number) => teams.find((t) => t.id === id)?.name || '';
+
+    const matches: Omit<Match, 'id'>[] = ROTATION_PAIRINGS.map(([homeIdx, awayIdx], i) => {
+      const homeIds = homeIdx.map((idx) => selectedIds[idx]);
+      const awayIds = awayIdx.map((idx) => selectedIds[idx]);
+      return {
+        match_type: 'merged',
+        team_set_id: standardTeamSetId,
+        date_str: dates[i],
+        time,
+        location,
+        home_team: homeIds.map(nameOf).join(' / '),
+        away_team: awayIds.map(nameOf).join(' / '),
+        merged_home_team_ids: homeIds,
+        merged_away_team_ids: awayIds,
+        home_score: null,
+        away_score: null,
+        completed: false,
+      };
+    });
+
+    onGenerate(matches);
+    setSelectedIds([]);
+    setDates(['', '', '']);
+  };
+
+  return (
+    <div className="rounded-xl border-2 border-dashed border-emerald-300 bg-emerald-50/40 p-4">
+      <h4 className="mb-1 flex items-center gap-1.5 text-sm font-bold text-emerald-800">
+        <GitMerge className="w-4 h-4" /> Rotation Generator
+      </h4>
+      <p className="mb-3 text-xs text-emerald-700">
+        Pick exactly 4 teams and 3 dates - creates all three round-robin merged pairings at once
+        (1+2 v 3+4, 1+3 v 2+4, 1+4 v 2+3).
+      </p>
+
+      <div className="mb-3 flex flex-wrap gap-1.5">
+        {teams.map((t) => {
+          const active = selectedIds.includes(t.id);
+          return (
+            <button
+              type="button"
+              key={t.id}
+              onClick={() => toggle(t.id)}
+              className={`rounded-md border px-2.5 py-1.5 text-xs font-bold transition ${active ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'}`}
+            >
+              {t.name}
+            </button>
+          );
+        })}
+        {teams.length === 0 && <span className="text-xs italic text-slate-400">No teams available</span>}
+      </div>
+
+      <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {[0, 1, 2].map((i) => (
+          <label key={i} className="block">
+            <span className="mb-1 block text-xs font-semibold uppercase text-emerald-700">Round {i + 1} Date</span>
+            <select
+              value={dates[i]}
+              onChange={(e) => setDates((prev) => {
+                const next = [...prev] as [string, string, string];
+                next[i] = e.target.value;
+                return next;
+              })}
+              className="w-full rounded-md border border-emerald-300 bg-white px-3 py-2 text-sm"
+            >
+              <option value="" disabled>Select a school day...</option>
+              {upcomingSchoolDays.map((day) => (
+                <option key={day.fecha} value={day.fecha}>{day.fecha} ({day.ciclo} Day - {day.dia})</option>
+              ))}
+            </select>
+          </label>
+        ))}
+      </div>
+
+      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <label className="block">
+          <span className="mb-1 block text-xs font-semibold uppercase text-emerald-700">Time</span>
+          <input value={time} onChange={(e) => setTime(e.target.value)} className="w-full rounded-md border border-emerald-300 bg-white px-3 py-2 text-sm" />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs font-semibold uppercase text-emerald-700">Location</span>
+          <select value={location} onChange={(e) => setLocation(e.target.value)} className="w-full rounded-md border border-emerald-300 bg-white px-3 py-2 text-sm">
+            <option value="Main Gym">Main Gym</option>
+            <option value="Aux Gym">Aux Gym</option>
+            <option value="Outside">Outside</option>
+          </select>
+        </label>
+      </div>
+
+      <button
+        type="button"
+        onClick={handleGenerate}
+        disabled={!canGenerate}
+        className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <Wand2 className="w-4 h-4" /> Generate 3 Rounds
+      </button>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { CalendarDays, Clock, MapPin, BarChart3, Users, Plus, Minus, Trophy, Lock, Unlock, Printer, User } from 'lucide-react';
 import type { ScheduleData, Match, Unit, Player } from '../types';
-import { computeStandings, rankStandings, groupMatchesBySet } from '../standings';
+import { computeStandings, rankStandings, groupMatchesBySet, resolveMergedSideTeams } from '../standings';
 
 const SOLO_GROUP_ID = '__solo__';
 
@@ -14,13 +14,14 @@ interface Props {
   onAwardTeamWin: (matchId: number, teamId: number) => void;
   onUnawardTeamWin: (matchId: number, teamId: number) => void;
   onToggleMatchComplete: (matchId: number) => void;
+  onToggleSoloWinner: (matchId: number, playerId: string) => void;
   onArchiveGroup: (groupId: string) => void;
   onUnarchiveGroup: (groupId: string) => void;
 }
 
 export default function ScheduleStandings({
   unit, schedule, roster, isAdmin,
-  onUpdateScore, onAwardTeamWin, onUnawardTeamWin, onToggleMatchComplete,
+  onUpdateScore, onAwardTeamWin, onUnawardTeamWin, onToggleMatchComplete, onToggleSoloWinner,
   onArchiveGroup, onUnarchiveGroup,
 }: Props) {
   // NEW: Guarantee all matches are sorted perfectly by Date and Time
@@ -51,16 +52,16 @@ export default function ScheduleStandings({
   const isArchived = !!(activeGroupId && activeGroupId !== SOLO_GROUP_ID && unit.archivedTeamSetIds?.includes(activeGroupId));
 
   const groupMatches = isSoloView ? soloMatches : (activeGroup?.matches ?? []);
-  const standardMatches = useMemo(() => groupMatches.filter(m => m.match_type === 'standard' || !m.match_type), [groupMatches]);
+  const standardMatches = useMemo(() => groupMatches.filter(m => m.match_type === 'standard' || m.match_type === 'merged' || !m.match_type), [groupMatches]);
   const bracketMatches = useMemo(() => groupMatches.filter(m => m.match_type === 'bracket'), [groupMatches]);
 
-  const standings = useMemo(() => computeStandings(standardMatches), [standardMatches]);
+  const standings = useMemo(() => computeStandings(standardMatches, unit), [standardMatches, unit]);
   const ranked = useMemo(() => rankStandings(standings), [standings]);
 
   const soloRanked = useMemo(() => {
     if (!isSoloView) return [];
     const counts: Record<string, number> = {};
-    soloMatches.forEach(m => { if (m.winner_player_id) counts[m.winner_player_id] = (counts[m.winner_player_id] ?? 0) + 1; });
+    soloMatches.forEach(m => (m.winner_player_ids || []).forEach(id => { counts[id] = (counts[id] ?? 0) + 1; }));
     return Object.entries(counts)
       .map(([playerId, wins]) => ({ playerId, name: roster.find(p => p.id === playerId)?.name ?? 'Unknown', wins }))
       .sort((a, b) => b.wins - a.wins);
@@ -143,20 +144,24 @@ export default function ScheduleStandings({
                 );
               }
               if (m.match_type === 'solo') {
-                const winnerName = roster.find(p => p.id === m.winner_player_id)?.name ?? m.away_team;
+                const winnerNames = (m.winner_player_ids || []).map(id => roster.find(p => p.id === id)?.name).filter(Boolean);
                 return (
                   <div key={m.id} className="sched-row">
                     <div className="sched-meta" style={{ textAlign: 'left', flex: '0 0 auto' }}>{m.time} • {m.location}</div>
                     <div style={{ flex: 1, textAlign: 'center', fontWeight: 700, fontSize: '10pt' }}>
-                      🏆 Individual Event Winner: {winnerName}
+                      {m.home_team || 'Individual Event'} — {winnerNames.length > 0 ? `🏆 ${winnerNames.join(' & ')}` : 'Winner pending'}
                     </div>
                   </div>
                 );
               }
+              const mergedHomeNames = m.match_type === 'merged' ? resolveMergedSideTeams(m, unit, 'home').map(t => t.name) : null;
+              const mergedAwayNames = m.match_type === 'merged' ? resolveMergedSideTeams(m, unit, 'away').map(t => t.name) : null;
               return (
                 <div key={m.id} className="sched-row">
                   <div className="sched-team">
-                    {m.home_team !== 'TBD' && <img src={getLogoUrl(m.home_team)} onError={e => e.currentTarget.style.display = 'none'} className="sched-logo" alt="" />}
+                    {mergedHomeNames
+                      ? mergedHomeNames.map(name => <img key={name} src={getLogoUrl(name)} onError={e => e.currentTarget.style.display = 'none'} className="sched-logo" alt="" />)
+                      : (m.home_team !== 'TBD' && <img src={getLogoUrl(m.home_team)} onError={e => e.currentTarget.style.display = 'none'} className="sched-logo" alt="" />)}
                     {m.home_team}
                   </div>
                   <div className="sched-meta">
@@ -168,7 +173,9 @@ export default function ScheduleStandings({
                   </div>
                   <div className="sched-team away">
                     {m.away_team}
-                    {m.away_team !== 'TBD' && <img src={getLogoUrl(m.away_team)} onError={e => e.currentTarget.style.display = 'none'} className="sched-logo" alt="" />}
+                    {mergedAwayNames
+                      ? mergedAwayNames.map(name => <img key={name} src={getLogoUrl(name)} onError={e => e.currentTarget.style.display = 'none'} className="sched-logo" alt="" />)
+                      : (m.away_team !== 'TBD' && <img src={getLogoUrl(m.away_team)} onError={e => e.currentTarget.style.display = 'none'} className="sched-logo" alt="" />)}
                   </div>
                 </div>
               );
@@ -236,7 +243,7 @@ export default function ScheduleStandings({
             <h3 className="mb-3 text-lg font-semibold text-slate-800">Individual Events</h3>
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               {soloMatches.map(m => (
-                <SoloMatchCard key={m.id} match={m} roster={roster} />
+                <SoloMatchCard key={m.id} match={m} roster={roster} isAdmin={isAdmin} onToggleWinner={onToggleSoloWinner} />
               ))}
               {soloMatches.length === 0 && (
                 <div className="col-span-full rounded-lg border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
@@ -271,6 +278,7 @@ export default function ScheduleStandings({
                   match={m}
                   unit={unit}
                   isAdmin={isAdmin}
+                  getLogoUrl={getLogoUrl}
                   onUpdateScore={onUpdateScore}
                   onAwardTeamWin={onAwardTeamWin}
                   onUnawardTeamWin={onUnawardTeamWin}
@@ -412,27 +420,77 @@ function SoloStandingsTable({ ranked }: { ranked: { playerId: string; name: stri
   );
 }
 
-function SoloMatchCard({ match, roster }: { match: Match; roster: Player[] }) {
-  const winnerName = roster.find(p => p.id === match.winner_player_id)?.name ?? match.away_team;
+function SoloMatchCard({ match, roster, isAdmin, onToggleWinner }: {
+  match: Match;
+  roster: Player[];
+  isAdmin: boolean;
+  onToggleWinner: (matchId: number, playerId: string) => void;
+}) {
+  const winnerIds = match.winner_player_ids || [];
+  const winnerNames = winnerIds.map(id => roster.find(p => p.id === id)?.name).filter((n): n is string => !!n);
+  const sortedRoster = [...roster].sort((a, b) => a.name.localeCompare(b.name));
+
   return (
     <div className="rounded-xl border border-purple-300 bg-purple-50/20 p-4 shadow-sm">
       <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-slate-100 pb-3 text-xs text-slate-500">
         <span className="flex items-center gap-1.5 font-black text-purple-700 uppercase tracking-wider bg-purple-50 px-2 py-1 rounded">
-          <User className="h-4 w-4" /> Individual Event
+          <User className="h-4 w-4" /> {match.home_team || 'Individual Event'}
         </span>
         <span className="flex items-center gap-1 font-semibold text-slate-600"><CalendarDays className="h-3.5 w-3.5" /> {match.date_str}</span>
         <span className="flex items-center gap-1 font-semibold text-slate-600"><Clock className="h-3.5 w-3.5" /> {match.time}</span>
         <span className="flex items-center gap-1 font-semibold text-slate-600"><MapPin className="h-3.5 w-3.5" /> {match.location}</span>
+        {match.completed && (
+          <span className="ml-auto rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">Finished</span>
+        )}
       </div>
-      <div className="flex items-center justify-center gap-2 py-2">
-        <Trophy className="h-5 w-5 text-amber-500" />
-        <span className="font-black text-lg text-slate-800">{winnerName}</span>
-      </div>
+
+      {isAdmin ? (
+        <div className="space-y-2">
+          <p className="text-xs font-semibold uppercase text-purple-500">Tap winner(s):</p>
+          <div className="flex flex-wrap gap-1.5">
+            {sortedRoster.map((p) => {
+              const active = winnerIds.includes(p.id);
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => onToggleWinner(match.id, p.id)}
+                  className={`rounded-md border px-2.5 py-1.5 text-xs font-bold transition ${active ? 'bg-purple-600 text-white border-purple-600' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'}`}
+                >
+                  {p.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center justify-center gap-2 py-2">
+          {winnerNames.length > 0 ? (
+            <>
+              <Trophy className="h-5 w-5 text-amber-500" />
+              <span className="font-black text-lg text-slate-800">{winnerNames.join(' & ')}</span>
+            </>
+          ) : (
+            <span className="text-sm font-semibold italic text-slate-400">Winner pending</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-function MatchCard({ match, unit, isAdmin, onUpdateScore, onAwardTeamWin, onUnawardTeamWin, onToggleMatchComplete, locked }: any) {
+function MergedSideLogos({ match, side, unit, getLogoUrl }: { match: Match; side: 'home' | 'away'; unit: Unit; getLogoUrl: (t: string) => string }) {
+  const names = resolveMergedSideTeams(match, unit, side).map(t => t.name);
+  if (names.length === 0) return null;
+  return (
+    <div className="flex items-center gap-1">
+      {names.map(name => (
+        <img key={name} src={getLogoUrl(name)} onError={e => e.currentTarget.style.display = 'none'} className="w-5 h-5 object-contain" alt="" title={name} />
+      ))}
+    </div>
+  );
+}
+
+function MatchCard({ match, unit, isAdmin, getLogoUrl, onUpdateScore, onAwardTeamWin, onUnawardTeamWin, onToggleMatchComplete, locked }: any) {
   const homeVal = match.home_score ?? '';
   const awayVal = match.away_score ?? '';
   const editable = isAdmin && !locked;
@@ -514,6 +572,11 @@ function MatchCard({ match, unit, isAdmin, onUpdateScore, onAwardTeamWin, onUnaw
             <Trophy className="h-4 w-4" /> {match.round_name}
           </span>
         )}
+        {match.match_type === 'merged' && (
+          <span className="flex items-center gap-1.5 font-black text-emerald-700 uppercase tracking-wider bg-emerald-50 px-2 py-1 rounded">
+            <Users className="h-4 w-4" /> Merged Teams
+          </span>
+        )}
         <span className="flex items-center gap-1 font-semibold text-slate-600"><CalendarDays className="h-3.5 w-3.5" /> {match.date_str}</span>
         <span className="flex items-center gap-1 font-semibold text-slate-600"><Clock className="h-3.5 w-3.5" /> {match.time}</span>
         <span className="flex items-center gap-1 font-semibold text-slate-600"><MapPin className="h-3.5 w-3.5" /> {match.location}</span>
@@ -525,13 +588,19 @@ function MatchCard({ match, unit, isAdmin, onUpdateScore, onAwardTeamWin, onUnaw
       </div>
 
       <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 py-2">
-        <div className={`text-right font-black text-sm md:text-base ${match.home_team === 'TBD' ? 'text-slate-400 italic' : 'text-slate-800'}`}>{match.home_team}</div>
+        <div className={`flex items-center justify-end gap-2 font-black text-sm md:text-base ${match.home_team === 'TBD' ? 'text-slate-400 italic' : 'text-slate-800'}`}>
+          {match.match_type === 'merged' && <MergedSideLogos match={match} side="home" unit={unit} getLogoUrl={getLogoUrl} />}
+          {match.home_team}
+        </div>
         <div className="flex items-center gap-2">
           <ScoreInput value={homeVal} disabled={!editable} onChange={(v: any) => onUpdateScore(match.id, 'home', v)} />
           <span className="text-xs font-bold text-slate-400">vs</span>
           <ScoreInput value={awayVal} disabled={!editable} onChange={(v: any) => onUpdateScore(match.id, 'away', v)} />
         </div>
-        <div className={`text-left font-black text-sm md:text-base ${match.away_team === 'TBD' ? 'text-slate-400 italic' : 'text-slate-800'}`}>{match.away_team}</div>
+        <div className={`flex items-center justify-start gap-2 font-black text-sm md:text-base ${match.away_team === 'TBD' ? 'text-slate-400 italic' : 'text-slate-800'}`}>
+          {match.away_team}
+          {match.match_type === 'merged' && <MergedSideLogos match={match} side="away" unit={unit} getLogoUrl={getLogoUrl} />}
+        </div>
       </div>
       {!isAdmin && !match.completed && <p className="mt-3 text-center text-xs font-semibold text-slate-400">Scores pending</p>}
     </div>

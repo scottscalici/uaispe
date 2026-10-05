@@ -69,8 +69,8 @@ export default function Leaderboards({
 
     matches.forEach(m => {
       if (m.match_type === 'solo') {
-        if (m.winner_player_id === playerId) {
-          entries.push({ match: m, label: 'Solo Event Win', unitName: u.unit_name });
+        if ((m.winner_player_ids || []).includes(playerId)) {
+          entries.push({ match: m, label: m.home_team ? `Solo Event - ${m.home_team}` : 'Solo Event Win', unitName: u.unit_name });
         }
         return;
       }

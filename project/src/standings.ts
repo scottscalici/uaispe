@@ -21,6 +21,16 @@ export function resolveMatchTeams(m: Match, unit: Unit): Team[] | undefined {
   return groupId === 'base' ? unit.baseTeams : unit.teamSets?.find((ts) => ts.id === groupId)?.teams;
 }
 
+/** Merged matches only: the real Team objects (current name/roster) making up one side -
+ *  e.g. ["Lions", "Ravens"] even if the match's display label says "Baltroit Ryans". Always
+ *  resolved fresh from the team-set's current composition, same as any other standings credit. */
+export function resolveMergedSideTeams(m: Match, unit: Unit, side: 'home' | 'away'): Team[] {
+  const ids = side === 'home' ? m.merged_home_team_ids : m.merged_away_team_ids;
+  if (!ids || ids.length === 0) return [];
+  const teams = resolveMatchTeams(m, unit) || [];
+  return ids.map((id) => teams.find((t) => t.id === id)).filter((t): t is Team => !!t);
+}
+
 export function getGroupLabel(groupId: string, unit: Unit): string {
   if (groupId === 'base') return 'Base Teams';
   return unit.teamSets?.find((ts) => ts.id === groupId)?.name ?? 'Unknown Team Set';
@@ -70,20 +80,28 @@ const splitTeams = (teamStr: string): string[] =>
         .filter((t) => t && t !== 'BYE' && t !== 'TBD')
     : [];
 
-export function computeStandings(matches: Match[]): Standings {
+// A match's credited team names for one side - merged matches resolve through their id arrays
+// (so a fun custom display label like "Baltroit Ryans" never leaks into the standings table),
+// everything else falls back to parsing the display string as before.
+const creditNames = (m: Match, unit: Unit, side: 'home' | 'away'): string[] =>
+  m.match_type === 'merged'
+    ? resolveMergedSideTeams(m, unit, side).map((t) => t.name)
+    : splitTeams(side === 'home' ? m.home_team : m.away_team);
+
+export function computeStandings(matches: Match[], unit: Unit): Standings {
   const standings: Standings = {};
 
   // Initialize every team that appears in any match
   matches.forEach((m) => {
-    [...splitTeams(m.home_team), ...splitTeams(m.away_team)].forEach((t) => {
+    [...creditNames(m, unit, 'home'), ...creditNames(m, unit, 'away')].forEach((t) => {
       if (!standings[t]) standings[t] = emptyRow();
     });
   });
 
   // Credit completed matches
   matches.filter((m) => m.completed).forEach((m) => {
-    const homeTeams = splitTeams(m.home_team);
-    const awayTeams = splitTeams(m.away_team);
+    const homeTeams = creditNames(m, unit, 'home');
+    const awayTeams = creditNames(m, unit, 'away');
     const hs = m.home_score ?? 0;
     const as = m.away_score ?? 0;
 
@@ -147,7 +165,7 @@ export function computeWinsFromSchedule(matches: Match[], unit: Unit): Record<st
 
   matches.forEach((m) => {
     if (m.match_type === 'solo') {
-      if (m.winner_player_id) wins[m.winner_player_id] = (wins[m.winner_player_id] ?? 0) + 1;
+      (m.winner_player_ids || []).forEach((id) => { wins[id] = (wins[id] ?? 0) + 1; });
       return;
     }
 
@@ -164,6 +182,16 @@ export function computeWinsFromSchedule(matches: Match[], unit: Unit): Record<st
     }
 
     if (!(m.completed && m.home_score !== null && m.away_score !== null)) return;
+
+    if (m.match_type === 'merged') {
+      const winningSide = m.home_score > m.away_score ? 'home' : m.away_score > m.home_score ? 'away' : null;
+      if (!winningSide) return;
+      resolveMergedSideTeams(m, unit, winningSide).forEach((team) => {
+        team.players.forEach((p) => { wins[p.id] = (wins[p.id] ?? 0) + 1; });
+      });
+      return;
+    }
+
     const winnerName = m.home_score > m.away_score ? m.home_team : m.away_score > m.home_score ? m.away_team : null;
     if (!winnerName) return;
     const winnerTeam = teams.find((t) => t.name === winnerName);

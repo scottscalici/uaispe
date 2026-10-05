@@ -28,15 +28,18 @@ export default function PublicDashboard({ unit, schedule }: Props) {
     [sortedAllMatches, activeRosterId]
   );
 
+  const flatRoster = useMemo(() => unit.baseTeams.flatMap(t => t.players), [unit]);
+
   const soloRanked = useMemo(() => {
     const counts: Record<string, { name: string; wins: number }> = {};
     soloMatches.forEach(m => {
-      if (!m.winner_player_id) return;
-      if (!counts[m.winner_player_id]) counts[m.winner_player_id] = { name: m.away_team, wins: 0 };
-      counts[m.winner_player_id].wins += 1;
+      (m.winner_player_ids || []).forEach(id => {
+        if (!counts[id]) counts[id] = { name: flatRoster.find(p => p.id === id)?.name ?? 'Unknown', wins: 0 };
+        counts[id].wins += 1;
+      });
     });
     return Object.values(counts).sort((a, b) => b.wins - a.wins);
-  }, [soloMatches]);
+  }, [soloMatches, flatRoster]);
 
   const getLogoUrl = (teamName: string) => {
     if (!teamName || teamName === 'TBD') return '';
@@ -94,8 +97,8 @@ export default function PublicDashboard({ unit, schedule }: Props) {
 
     sortedAllMatches.forEach(m => {
       if (m.match_type === 'solo') {
-        if (m.winner_player_id === foundPlayer!.id) {
-          playerTimeline.push({ match: m, playingAs: 'Individual Event' });
+        if ((m.winner_player_ids || []).includes(foundPlayer!.id)) {
+          playerTimeline.push({ match: m, playingAs: m.home_team || 'Individual Event' });
         }
         return;
       }
@@ -414,6 +417,7 @@ export default function PublicDashboard({ unit, schedule }: Props) {
                   }
 
                   if (m.match_type === 'solo') {
+                    const winnerNames = (m.winner_player_ids || []).map(id => flatRoster.find(p => p.id === id)?.name).filter(Boolean);
                     return (
                       <div key={m.id} className="flex flex-wrap items-center justify-between gap-3 bg-purple-50/30 border border-purple-200 p-3 rounded-lg shadow-sm">
                         <div className="flex items-center gap-2 text-xs font-semibold text-slate-500">
@@ -422,11 +426,15 @@ export default function PublicDashboard({ unit, schedule }: Props) {
                           <span className="text-purple-600 font-bold flex items-center gap-1"><MapPin className="w-3 h-3"/> {m.location || 'Main Gym'}</span>
                         </div>
                         <div className="flex items-center gap-1.5 text-purple-700 bg-purple-100 px-2 py-0.5 rounded font-black uppercase tracking-wider text-xs">
-                          <User className="w-3 h-3" /> Individual Event
+                          <User className="w-3 h-3" /> {m.home_team || 'Individual Event'}
                         </div>
-                        <div className="flex items-center gap-1.5 font-black text-slate-800">
-                          <Trophy className="w-4 h-4 text-amber-500" /> {m.away_team}
-                        </div>
+                        {winnerNames.length > 0 ? (
+                          <div className="flex items-center gap-1.5 font-black text-slate-800">
+                            <Trophy className="w-4 h-4 text-amber-500" /> {winnerNames.join(' & ')}
+                          </div>
+                        ) : (
+                          <div className="text-xs font-semibold italic text-slate-400">Winner pending</div>
+                        )}
                       </div>
                     );
                   }

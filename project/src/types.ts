@@ -119,7 +119,7 @@ export interface Unit {
   parentSportType?: string;
 }
 
-export type MatchType = 'standard' | 'minigame' | 'bracket' | 'solo';
+export type MatchType = 'standard' | 'minigame' | 'bracket' | 'solo' | 'merged';
 
 export interface Match {
   id: number;
@@ -138,9 +138,19 @@ export interface Match {
    *  event - real, recomputable ground truth (like a score is for a standard match),
    *  not a bare counter. */
   awardedTeamCounts?: Record<number, number>;
-  /** Solo events only: the single student credited with the win (e.g. last-one-standing
-   *  dodgeball). Not tied to any team, so it's unaffected by roster changes. */
-  winner_player_id?: string;
+  /** Solo events only: the student(s) credited with the win (e.g. last-one-standing
+   *  dodgeball, or several students tying for first) - picked from the Scores tab once
+   *  the event is finished, not required when the event is first scheduled. Empty/missing
+   *  means not decided yet. Not tied to any team, so it's unaffected by roster changes.
+   *  home_team doubles as a free-text event label here (e.g. "Game 1", "Round 2"). */
+  winner_player_ids?: string[];
+  /** Merged matches only: the constituent team ids combining to form each side - each of
+   *  these teams gets the match's full score and a win/loss/tie credited to its own
+   *  standings independently of the others. home_team/away_team are just free-text display
+   *  labels here (default "Team A / Team B", freely renameable to anything, e.g. a combined
+   *  mashup name) and never affect which teams get credit. */
+  merged_home_team_ids?: number[];
+  merged_away_team_ids?: number[];
 }
 
 export interface StandingRow {

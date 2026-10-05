@@ -507,6 +507,22 @@ export default function App() {
     }
   }));
 
+  // A solo event is "completed" exactly when at least one winner has been picked - no
+  // separate complete/reopen toggle needed, same spirit as a standard match completing
+  // once both scores are entered.
+  const handleToggleSoloWinner = (matchId: number, playerId: string) => updateActiveUnit((u) => ({
+    ...u,
+    schedule: {
+      ...u.schedule,
+      matches: u.schedule.matches.map((m) => {
+        if (m.id !== matchId) return m;
+        const current = m.winner_player_ids || [];
+        const nextIds = current.includes(playerId) ? current.filter((id) => id !== playerId) : [...current, playerId];
+        return { ...m, winner_player_ids: nextIds, completed: nextIds.length > 0 };
+      })
+    }
+  }));
+
   const handleUpdateGradebookLog = (dateStr: string, playerId: string, log: DailyLog) => updateClass((c) => {
     const nextGradebook = { ...(c.gradebook || {}) };
     const dateLogs = { ...(nextGradebook[dateStr] || {}) };
@@ -766,7 +782,7 @@ export default function App() {
                   onPreviewStudentView={() => { setPreviewFromAdmin(true); setRoute('student'); setPublicView('dashboard'); }} 
                 />
               )
-              : adminView === 'schedule' ? <ScheduleStandings key={`sched-${unit.unit_id}`} unit={unit} schedule={schedule} roster={roster} isAdmin={true} onUpdateScore={handleUpdateScore} onAwardTeamWin={handleAwardTeamWin} onUnawardTeamWin={handleUnawardTeamWin} onToggleMatchComplete={handleToggleMatchComplete} onArchiveGroup={handleArchiveTeamSet} onUnarchiveGroup={handleUnarchiveTeamSet} />
+              : adminView === 'schedule' ? <ScheduleStandings key={`sched-${unit.unit_id}`} unit={unit} schedule={schedule} roster={roster} isAdmin={true} onUpdateScore={handleUpdateScore} onAwardTeamWin={handleAwardTeamWin} onUnawardTeamWin={handleUnawardTeamWin} onToggleMatchComplete={handleToggleMatchComplete} onToggleSoloWinner={handleToggleSoloWinner} onArchiveGroup={handleArchiveTeamSet} onUnarchiveGroup={handleUnarchiveTeamSet} />
               : adminView === 'attendance' ? (
                   <div className="space-y-4">
                     <div className="flex gap-2">
