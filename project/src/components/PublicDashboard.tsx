@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Search, Calendar, MapPin, Trophy, Users, ShieldAlert, History, User } from 'lucide-react';
 import type { Unit, ScheduleData, Match } from '../types';
-import { resolveMatchGroupId } from '../standings';
+import { resolveMatchGroupId, resolveMergedSideTeams } from '../standings';
 
 interface Props {
   unit: Unit;
@@ -439,6 +439,8 @@ export default function PublicDashboard({ unit, schedule }: Props) {
                     );
                   }
 
+                  const mergedHomeNames = m.match_type === 'merged' ? resolveMergedSideTeams(m, unit, 'home').map(t => t.name) : null;
+                  const mergedAwayNames = m.match_type === 'merged' ? resolveMergedSideTeams(m, unit, 'away').map(t => t.name) : null;
                   return (
                     <div key={m.id} className={`flex flex-wrap items-center justify-between bg-white border ${m.match_type === 'bracket' ? 'border-amber-200' : 'border-slate-200'} p-3 rounded-lg gap-2 shadow-sm`}>
                       <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 text-xs font-semibold text-slate-500 w-full sm:w-auto">
@@ -451,15 +453,23 @@ export default function PublicDashboard({ unit, schedule }: Props) {
                       </div>
                       <div className="flex w-full items-center justify-between mt-1 sm:mt-0">
                         <div className={`flex flex-1 items-center gap-2 font-bold ${m.home_team === 'TBD' ? 'text-slate-400 italic' : 'text-slate-800'}`}>
-                          {m.home_team !== 'TBD' && <img src={getLogoUrl(m.home_team)} onError={e => e.currentTarget.style.display='none'} className="w-6 h-6 object-contain bg-white rounded-full" alt=""/>} 
+                          {mergedHomeNames
+                            ? mergedHomeNames.map(name => (
+                                <img key={name} src={getLogoUrl(name)} onError={e => e.currentTarget.style.display='none'} className="w-6 h-6 object-contain bg-white rounded-full" alt=""/>
+                              ))
+                            : (m.home_team !== 'TBD' && <img src={getLogoUrl(m.home_team)} onError={e => e.currentTarget.style.display='none'} className="w-6 h-6 object-contain bg-white rounded-full" alt=""/>)}
                           {m.home_team}
                         </div>
                         <div className={`px-4 font-black whitespace-nowrap ${m.match_type === 'bracket' ? 'text-amber-600' : 'text-blue-600'}`}>
                           {m.completed ? `${m.home_score} - ${m.away_score}` : 'vs'}
                         </div>
                         <div className={`flex flex-1 items-center justify-end gap-2 font-bold text-right ${m.away_team === 'TBD' ? 'text-slate-400 italic' : 'text-slate-800'}`}>
-                          {m.away_team} 
-                          {m.away_team !== 'TBD' && <img src={getLogoUrl(m.away_team)} onError={e => e.currentTarget.style.display='none'} className="w-6 h-6 object-contain bg-white rounded-full" alt=""/>}
+                          {m.away_team}
+                          {mergedAwayNames
+                            ? mergedAwayNames.map(name => (
+                                <img key={name} src={getLogoUrl(name)} onError={e => e.currentTarget.style.display='none'} className="w-6 h-6 object-contain bg-white rounded-full" alt=""/>
+                              ))
+                            : (m.away_team !== 'TBD' && <img src={getLogoUrl(m.away_team)} onError={e => e.currentTarget.style.display='none'} className="w-6 h-6 object-contain bg-white rounded-full" alt=""/>)}
                         </div>
                       </div>
                     </div>
