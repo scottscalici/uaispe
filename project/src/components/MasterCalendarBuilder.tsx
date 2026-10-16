@@ -1,17 +1,18 @@
 import { useState, useEffect } from 'react';
-import { Save, CalendarDays, Loader2, History } from 'lucide-react';
-import type { CalendarDay } from '../types';
+import { Save, CalendarDays, Loader2, History, Dumbbell } from 'lucide-react';
+import type { CalendarDay, WorkoutLibrary } from '../types';
 import { fetchCentralCalendar } from '../firestore'; // Adjust path if needed
 
 interface Props {
   calendar: CalendarDay[];
   classId: string;
+  workoutLibrary: WorkoutLibrary;
   onSave: (calendar: CalendarDay[]) => void;
 }
 
 type CycleFilter = 'A' | 'B' | 'All';
 
-export default function MasterCalendarBuilder({ calendar, classId, onSave }: Props) {
+export default function MasterCalendarBuilder({ calendar, classId, workoutLibrary, onSave }: Props) {
   const [localData, setLocalData] = useState<CalendarDay[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
@@ -52,6 +53,14 @@ export default function MasterCalendarBuilder({ calendar, classId, onSave }: Pro
     const updated = [...localData];
     updated[index] = { ...updated[index], [field]: value };
     setLocalData(updated);
+  };
+
+  // A day whose only plan is a workout has nothing typed into Unit Name - rather than make
+  // the admin retype the workout as a fake "unit", show the assigned workout right in that
+  // column so a pure workout day still reads like a unit day at a glance.
+  const resolveWorkoutName = (day: CalendarDay): string | null => {
+    if (!day.workoutId) return null;
+    return workoutLibrary.workouts.find((w) => w.id === day.workoutId)?.workoutName || null;
   };
 
   // 1. Filter out non-class days and apply the A/B/All toggle
@@ -156,16 +165,23 @@ export default function MasterCalendarBuilder({ calendar, classId, onSave }: Pro
                   </span>
                 </td>
                 <td className="p-4 align-top">
-                  <input 
-                    type="text" 
-                    value={day.unitName || ''} 
+                  {!day.unitName && resolveWorkoutName(day) && (
+                    <div className="mb-1.5 flex items-center gap-1.5 rounded-md border border-orange-200 bg-orange-50 px-2.5 py-1.5 text-orange-800">
+                      <Dumbbell className="h-3.5 w-3.5 shrink-0 text-orange-500" />
+                      <span className="text-sm font-bold">{resolveWorkoutName(day)}</span>
+                      <span className="text-xs font-semibold text-orange-500">(workout day)</span>
+                    </div>
+                  )}
+                  <input
+                    type="text"
+                    value={day.unitName || ''}
                     onChange={(e) => handleChange(index, 'unitName', e.target.value)}
-                    placeholder="e.g., Soccer, Open Gym" 
+                    placeholder={resolveWorkoutName(day) ? 'Add a unit name too, if any' : 'e.g., Soccer, Open Gym'}
                     className="w-full border border-slate-300 rounded-md p-2.5 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-shadow"
                   />
                 </td>
                 <td className="p-4 align-top">
-                  <input 
+                  <input
                     type="text" 
                     value={day.activity || ''} 
                     onChange={(e) => handleChange(index, 'activity', e.target.value)}
@@ -198,17 +214,24 @@ export default function MasterCalendarBuilder({ calendar, classId, onSave }: Pro
                       </span>
                     </td>
                     <td className="p-4 align-top">
-                      <input 
-                        type="text" 
-                        value={day.unitName || ''} 
+                      {!day.unitName && resolveWorkoutName(day) && (
+                        <div className="mb-1.5 flex items-center gap-1.5 rounded-md border border-orange-100 bg-orange-50/60 px-2.5 py-1.5 text-orange-700">
+                          <Dumbbell className="h-3.5 w-3.5 shrink-0 text-orange-400" />
+                          <span className="text-sm font-bold">{resolveWorkoutName(day)}</span>
+                          <span className="text-xs font-semibold text-orange-400">(workout day)</span>
+                        </div>
+                      )}
+                      <input
+                        type="text"
+                        value={day.unitName || ''}
                         onChange={(e) => handleChange(index, 'unitName', e.target.value)}
                         className="w-full border border-slate-200 bg-transparent rounded-md p-2.5 outline-none focus:border-slate-400 focus:bg-white transition-all text-slate-600"
                       />
                     </td>
                     <td className="p-4 align-top">
-                      <input 
-                        type="text" 
-                        value={day.activity || ''} 
+                      <input
+                        type="text"
+                        value={day.activity || ''}
                         onChange={(e) => handleChange(index, 'activity', e.target.value)}
                         className="w-full border border-slate-200 bg-transparent rounded-md p-2.5 outline-none focus:border-slate-400 focus:bg-white transition-all text-slate-600"
                       />

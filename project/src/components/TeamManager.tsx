@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react';
-import { Shield, ArrowRightLeft, Pencil, Check, Printer, Eye, Wand2, CalendarDays, RefreshCw, XCircle } from 'lucide-react';
+import { Shield, ArrowRightLeft, Pencil, Check, Printer, Eye, EyeOff, Wand2, CalendarDays, RefreshCw, XCircle } from 'lucide-react';
 import type { Unit, AttendanceMap, DailyTeamSnapshot, Player, Team } from '../types';
+
+const HIDE_SKILL_KEY = 'pe_hide_skill_values';
 
 interface Props {
   unit: Unit;
@@ -35,6 +37,15 @@ export default function TeamManager({
   const [selectedPlayer, setSelectedPlayer] = useState<{ id: string; teamId: number } | null>(null);
   const [editingTeamId, setEditingTeamId] = useState<number | null>(null);
   const [editName, setEditName] = useState('');
+
+  const [hideSkill, setHideSkill] = useState(() => {
+    try { return localStorage.getItem(HIDE_SKILL_KEY) === '1'; } catch { return false; }
+  });
+  const toggleHideSkill = () => setHideSkill((prev) => {
+    const next = !prev;
+    try { localStorage.setItem(HIDE_SKILL_KEY, next ? '1' : '0'); } catch { /* ignore */ }
+    return next;
+  });
 
   // Figure out which teams we are rendering based on the active tab
   const dailySnapshot = dailyTeams[dateStr];
@@ -210,6 +221,15 @@ export default function TeamManager({
         )}
         
         <div className="flex items-center gap-3">
+          {isAdmin && (
+            <button
+              onClick={toggleHideSkill}
+              title={hideSkill ? 'Show skill values' : 'Hide skill values (useful when students are nearby)'}
+              className="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-200 transition no-print"
+            >
+              {hideSkill ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />} {hideSkill ? 'Stats Hidden' : 'Hide Stats'}
+            </button>
+          )}
           {isAdmin && viewMode === 'daily' && dailySnapshot && (
             <button onClick={onClearDaily} className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-600 border border-red-200 hover:bg-red-100 transition">
               <XCircle className="h-4 w-4" /> Reset Today
@@ -342,7 +362,7 @@ export default function TeamManager({
 
                         {isAdmin && (
                           <div className="flex items-center gap-2 no-print shrink-0">
-                            <span className="text-[10px] font-bold text-slate-400 hidden sm:inline">S:{p.skill}</span>
+                            {!hideSkill && <span className="text-[10px] font-bold text-slate-400 hidden sm:inline">S:{p.skill}</span>}
                             <select
                               value=""
                               onClick={(e) => e.stopPropagation()}

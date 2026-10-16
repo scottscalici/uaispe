@@ -48,6 +48,7 @@ function WorkoutTab({ library, onSaveWorkout, onDeleteWorkout }: { library: Work
   const [circuits, setCircuits] = useState<WorkoutCircuit[]>([]);
   const [stations, setStations] = useState<WorkoutStation[]>([]);
   const [stationDuration, setStationDuration] = useState(90);
+  const [stationRestDuration, setStationRestDuration] = useState(0);
 
   const blankStep = () => ({ exerciseId: library.exercises[0]?.id || '', duration: 30, type: 'work' as WorkoutStepType });
   const blankStation = (): WorkoutStation => ({ id: `st_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, exerciseId: library.exercises[0]?.id || '' });
@@ -59,6 +60,7 @@ function WorkoutTab({ library, onSaveWorkout, onDeleteWorkout }: { library: Work
     setCircuits([{ circuitId: 'Circuit A', rounds: 1, sequence: [blankStep()] }]);
     setStations([blankStation(), blankStation()]);
     setStationDuration(90);
+    setStationRestDuration(0);
   };
 
   const startEdit = (w: Workout) => {
@@ -68,6 +70,7 @@ function WorkoutTab({ library, onSaveWorkout, onDeleteWorkout }: { library: Work
     setCircuits(w.circuits.map(c => ({ ...c, sequence: c.sequence.map(s => ({ ...s })) })));
     setStations((w.stations || [blankStation(), blankStation()]).map(s => ({ ...s })));
     setStationDuration(w.stationDuration || 90);
+    setStationRestDuration(w.stationRestDuration || 0);
   };
 
   const cancel = () => { setEditingId(null); setName(''); setCircuits([]); setStations([]); };
@@ -99,7 +102,7 @@ function WorkoutTab({ library, onSaveWorkout, onDeleteWorkout }: { library: Work
     if (!isValid) return;
     const id = editingId && editingId !== '__new__' ? editingId : slugify(name);
     if (mode === 'stations') {
-      onSaveWorkout({ id, workoutName: name.trim(), mode, circuits: [], stations, stationDuration });
+      onSaveWorkout({ id, workoutName: name.trim(), mode, circuits: [], stations, stationDuration, stationRestDuration: stationRestDuration > 0 ? stationRestDuration : undefined });
     } else {
       onSaveWorkout({ id, workoutName: name.trim(), mode, circuits });
     }
@@ -126,7 +129,7 @@ function WorkoutTab({ library, onSaveWorkout, onDeleteWorkout }: { library: Work
                   </p>
                   <p className="text-xs text-slate-400">
                     {w.mode === 'stations'
-                      ? `${w.stations?.length || 0} stations - ${w.stationDuration || 0}s each`
+                      ? `${w.stations?.length || 0} stations - ${w.stationDuration || 0}s each${w.stationRestDuration ? ` + ${w.stationRestDuration}s rest (auto)` : ''}`
                       : `${w.circuits.length} circuit${w.circuits.length !== 1 ? 's' : ''} - ${w.circuits.reduce((n, c) => n + c.sequence.length, 0)} steps`}
                   </p>
                 </div>
@@ -167,10 +170,28 @@ function WorkoutTab({ library, onSaveWorkout, onDeleteWorkout }: { library: Work
 
           {mode === 'stations' ? (
             <div className="space-y-3">
-              <div className="w-40">
-                <label className="mb-1 block text-[10px] font-semibold uppercase text-slate-500">Seconds per Rotation</label>
-                <input type="number" min={10} value={stationDuration} onChange={e => setStationDuration(parseInt(e.target.value, 10) || 10)} className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm" />
+              <div className="flex gap-3">
+                <div className="w-40">
+                  <label className="mb-1 block text-[10px] font-semibold uppercase text-slate-500">Seconds of Work</label>
+                  <input type="number" min={10} value={stationDuration} onChange={e => setStationDuration(parseInt(e.target.value, 10) || 10)} className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm" />
+                </div>
+                <div className="w-48">
+                  <label className="mb-1 block text-[10px] font-semibold uppercase text-slate-500">Seconds to Recover/Rotate</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={stationRestDuration}
+                    onChange={e => setStationRestDuration(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                    placeholder="0 = manual rotation"
+                    className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                  />
+                </div>
               </div>
+              <p className="text-[11px] text-slate-400">
+                {stationRestDuration > 0
+                  ? `Timer runs on its own: ${stationDuration}s work, then ${stationRestDuration}s to recover and rotate, repeating through every station.`
+                  : 'Leave recovery at 0 to keep calling rotations yourself with one shared work timer.'}
+              </p>
 
               <div className="space-y-2">
                 {stations.map((s, idx) => (

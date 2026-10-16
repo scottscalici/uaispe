@@ -37,6 +37,16 @@ export default function DailyPlanner({ calendar, units, workoutLibrary, onUpdate
     return units.find(u => u.unit.unit_name.toLowerCase() === activeDay.unitName?.toLowerCase());
   }, [activeDay, units]);
 
+  // A day whose only plan is a workout has nothing in unitName - rather than call that "No
+  // Unit Scheduled", show the assigned workout's own name so a pure workout day reads the
+  // same way a unit day does, with no fake unit needed.
+  const assignedWorkoutName = useMemo(() => {
+    if (!activeDay?.workoutId) return null;
+    return workoutLibrary.workouts.find(w => w.id === activeDay.workoutId)?.workoutName || null;
+  }, [activeDay, workoutLibrary]);
+
+  const calendarContextLabel = activeDay?.unitName || assignedWorkoutName || 'No Unit Scheduled';
+
   const lessonPlan: LessonPlan = useMemo(() => {
     return activeDay?.lessonPlan || { linkedSyllabusDay: null, goals: '', timeline: DEFAULT_TIMELINE };
   }, [activeDay]);
@@ -141,7 +151,7 @@ export default function DailyPlanner({ calendar, units, workoutLibrary, onUpdate
 
       {/* Print-only view: today's schedule + the run-of-show, no editing controls */}
       <div id="printable-plan" className="hidden print:block">
-        <h1 className="text-2xl font-black text-center mb-1">{activeDay.unitName || 'Class'} — {activeDay.fecha}</h1>
+        <h1 className="text-2xl font-black text-center mb-1">{activeDay.unitName || assignedWorkoutName || 'Class'} — {activeDay.fecha}</h1>
         {activeDay.activity && <p className="text-center text-sm text-slate-600 mb-4">{activeDay.activity}</p>}
 
         {lessonPlan.goals && (
@@ -204,7 +214,10 @@ export default function DailyPlanner({ calendar, units, workoutLibrary, onUpdate
         <div className="space-y-4">
           <div className="bg-slate-800 rounded-xl p-5 text-white shadow-md">
             <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 mb-1">Calendar Context</h3>
-            <div className="text-xl font-black mb-2">{activeDay.unitName || 'No Unit Scheduled'}</div>
+            <div className="text-xl font-black mb-2 flex items-center gap-2">
+              {!activeDay.unitName && assignedWorkoutName && <Dumbbell className="h-4 w-4 text-orange-400" />}
+              {calendarContextLabel}
+            </div>
             {activeDay.activity && <div className="text-slate-300 text-sm">🗓️ Activity: {activeDay.activity}</div>}
           </div>
 

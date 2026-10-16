@@ -6,7 +6,7 @@ import {
   runTransaction,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import type { ClassData, WorkoutLibrary, SchoolSettings } from './types';
+import type { ClassData, WorkoutLibrary, SchoolSettings, Poll } from './types';
 import { initialClasses } from './data';
 import { seedExercises, seedWorkouts } from './workoutSeedData';
 import { centralDb } from './firebase';
@@ -17,6 +17,9 @@ const WORKOUT_LIBRARY_DOC = 'data';
 const SETTINGS_COLLECTION = 'pe_settings';
 const SCHOOL_SETTINGS_DOC = 'school';
 const VOTES_COLLECTION = 'pe_teammate_votes';
+const POLLS_COLLECTION = 'pe_poll_data';
+const POLLS_DOC = 'data';
+const POLL_VOTES_COLLECTION = 'pe_poll_votes';
 
 export interface AppMeta {
   classIds: string[];
@@ -187,6 +190,78 @@ export async function submitTeammateVote(
 
     tx.set(voteRef, { classId, unitId, voterId, votedForId, timestamp: Date.now() });
     tx.update(classRef, { units });
+
+    return 'ok';
+  });
+}
+
+/** Polls created before a poll could hold several questions stored one {question, options}
+ *  directly instead of {questions: [...]} - those are dropped on load (not converted; they're
+ *  throwaway test data) so poll.questions is never undefined for what's left. */
+function dropLegacyPolls(raw: Poll[]): Poll[] {
+  return raw.filter((p) => Array.isArray(p?.questions));
+}
+
+/** Live feed of every poll for the admin's Polls tab, same single-shared-doc shape as the
+ *  workout library - the admin's own edits (creating a poll) go through local state first
+ *  and get debounce-saved back here, same pattern as handleSaveWorkout, so creating a poll
+ *  feels instant even if the write to Firestore itself is slow or briefly offline. */
+export function subscribeToPolls(onUpdate: (polls: Poll[]) => void): () => void {
+  const ref = doc(db, POLLS_COLLECTION, POLLS_DOC);
+  return onSnapshot(ref, (snap) => {
+    const raw = snap.exists() ? (snap.data() as { polls: Poll[] }).polls || [] : [];
+    onUpdate(dropLegacyPolls(raw));
+  });
+}
+
+export async function savePolls(polls: Poll[]): Promise<void> {
+  const ref = doc(db, POLLS_COLLECTION, POLLS_DOC);
+  await setDoc(ref, stripUndefined({ polls }));
+}
+
+/** One-time read for the student-facing link page - it doesn't need live updates, just a
+ *  consistent snapshot of every poll's question/options to find the one it links to
+ *  (mirrors loadAllClasses). */
+export async function loadPolls(): Promise<Poll[]> {
+  const ref = doc(db, POLLS_COLLECTION, POLLS_DOC);
+  const snap = await getDoc(ref);
+  const raw = snap.exists() ? (snap.data() as { polls: Poll[] }).polls || [] : [];
+  return dropLegacyPolls(raw);
+}
+
+/** One vote, keyed by pollId_voterToken so a repeat submission from the same browser is
+ *  rejected rather than counted twice - same lockout shape as submitTeammateVote, just
+ *  keyed off a random per-device token instead of a roster id (polls have no roster).
+ *  answers covers every question in the poll, submitted together in one visit. */
+export async function submitPollVote(
+  pollId: string,
+  answers: { questionId: string; optionId: string }[],
+  voterToken: string,
+): Promise<VoteResult> {
+  const voteRef = doc(db, POLL_VOTES_COLLECTION, `${pollId}_${voterToken}`);
+  const pollsRef = doc(db, POLLS_COLLECTION, POLLS_DOC);
+
+  return runTransaction(db, async (tx) => {
+    const voteSnap = await tx.get(voteRef);
+    if (voteSnap.exists()) return 'already_voted';
+
+    const pollsSnap = await tx.get(pollsRef);
+    if (!pollsSnap.exists()) throw new Error('Polls not found');
+    const data = pollsSnap.data() as { polls: Poll[] };
+    const polls = dropLegacyPolls(data.polls).map((p) => {
+      if (p.id !== pollId) return p;
+      return {
+        ...p,
+        questions: p.questions.map((q) => {
+          const answer = answers.find((a) => a.questionId === q.id);
+          if (!answer) return q;
+          return { ...q, options: q.options.map((o) => (o.id === answer.optionId ? { ...o, votes: o.votes + 1 } : o)) };
+        }),
+      };
+    });
+
+    tx.set(voteRef, { pollId, voterToken, answers, timestamp: Date.now() });
+    tx.update(pollsRef, { polls });
 
     return 'ok';
   });

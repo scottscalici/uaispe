@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
-import { Wand2, Save, ArrowRightLeft, Users, Plus, Trash2, Pencil } from 'lucide-react';
+import { Wand2, Save, ArrowRightLeft, Users, Plus, Trash2, Pencil, Eye, EyeOff } from 'lucide-react';
 import type { Unit, Player, Team } from '../types';
+
+const HIDE_SKILL_KEY = 'pe_hide_skill_values';
 
 interface Props {
   roster: Player[];
@@ -85,6 +87,15 @@ export default function TeamCreator({ roster, unit, onGenerate, onDeleteTeamSet 
   const [preview, setPreview] = useState<Team[] | null>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<{ id: string; teamId: number } | null>(null);
   const [newSetName, setNewSetName] = useState('');
+
+  const [hideSkill, setHideSkill] = useState(() => {
+    try { return localStorage.getItem(HIDE_SKILL_KEY) === '1'; } catch { return false; }
+  });
+  const toggleHideSkill = () => setHideSkill((prev) => {
+    const next = !prev;
+    try { localStorage.setItem(HIDE_SKILL_KEY, next ? '1' : '0'); } catch { /* ignore */ }
+    return next;
+  });
 
   // Dynamically calculate the GitHub URL for the active unit
   const safeUnit = unit.unit_name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
@@ -248,6 +259,28 @@ export default function TeamCreator({ roster, unit, onGenerate, onDeleteTeamSet 
 
   return (
     <div className="space-y-6">
+      {/* Default Unit Teams - always present, edited the same way as a saved team set */}
+      <div className="rounded-xl border border-blue-200 bg-blue-50 p-5 shadow-sm">
+        <h3 className="mb-3 flex items-center gap-2 font-bold text-blue-900">
+          <Users className="h-5 w-5" /> Default Unit Teams
+        </h3>
+        <div className="flex flex-wrap gap-2">
+          <div className="group flex items-center gap-2 rounded-lg border border-blue-200 bg-white px-3 py-1.5 shadow-sm transition-all hover:border-blue-300">
+            <span className="font-bold text-blue-700">Default Unit Teams</span>
+            <span className="text-xs font-semibold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+              {unit.baseTeams.length} teams
+            </span>
+            <button
+              onClick={() => { setPreview(unit.baseTeams); setNewSetName(''); }}
+              className="rounded p-1 text-blue-400 hover:bg-blue-50 hover:text-blue-700"
+              title="Edit the default teams (loads into preview)"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Display Existing Team Sets */}
       {unit.teamSets && unit.teamSets.length > 0 && (
         <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-5 shadow-sm">
@@ -396,10 +429,17 @@ export default function TeamCreator({ roster, unit, onGenerate, onDeleteTeamSet 
                 <ArrowRightLeft className="w-3 h-3"/> Click any two players to swap, or use dropdown to move.
               </p>
             </div>
-            
+
             <div className="flex flex-col sm:flex-row gap-3">
-              <button 
-                onClick={handleSaveDefault} 
+              <button
+                onClick={toggleHideSkill}
+                title={hideSkill ? 'Show skill and compete scores' : 'Hide skill and compete scores (useful when students are nearby)'}
+                className="flex items-center justify-center gap-2 rounded-lg bg-slate-100 px-4 py-2 text-sm font-bold text-slate-600 transition hover:bg-slate-200 shadow-sm"
+              >
+                {hideSkill ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />} {hideSkill ? 'Stats Hidden' : 'Hide Stats'}
+              </button>
+              <button
+                onClick={handleSaveDefault}
                 className="flex items-center justify-center gap-2 rounded-lg bg-slate-800 px-4 py-2 text-sm font-bold text-white transition hover:bg-slate-900 shadow-sm"
               >
                 <Save className="h-4 w-4" /> Set as Default
@@ -439,9 +479,11 @@ export default function TeamCreator({ roster, unit, onGenerate, onDeleteTeamSet 
                     />
                     <span className="text-sm font-normal text-slate-500">({team.players.length} players)</span>
                   </div>
-                  <div className="text-xs font-bold text-slate-500 bg-white px-2 py-1 rounded border shadow-sm">
-                    Avg Skill: {avgSkill(team.players).toFixed(1)}
-                  </div>
+                  {!hideSkill && (
+                    <div className="text-xs font-bold text-slate-500 bg-white px-2 py-1 rounded border shadow-sm">
+                      Avg Skill: {avgSkill(team.players).toFixed(1)}
+                    </div>
+                  )}
                 </div>
                 <div className="space-y-1">
                   {team.players.map(p => {
@@ -461,10 +503,10 @@ export default function TeamCreator({ roster, unit, onGenerate, onDeleteTeamSet 
                         </span>
                         <div className="flex items-center gap-3 shrink-0">
                           <div className="flex gap-2 text-[10px] sm:text-xs font-bold text-slate-400">
-                            {p.grade && <span className="text-purple-500 hidden sm:inline">{p.grade}</span>}
+                            {!hideSkill && p.grade && <span className="text-purple-500 hidden sm:inline">{p.grade}</span>}
                             <span className={p.gender === 'F' ? 'text-pink-500' : 'text-blue-500'}>{p.gender}</span>
-                            <span>S:{p.skill}</span>
-                            <span className="hidden sm:inline">C:{p.compete}</span>
+                            {!hideSkill && <span>S:{p.skill}</span>}
+                            {!hideSkill && <span className="hidden sm:inline">C:{p.compete}</span>}
                           </div>
                           <select
                             value=""

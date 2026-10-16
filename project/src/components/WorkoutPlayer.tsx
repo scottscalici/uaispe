@@ -44,11 +44,14 @@ export default function WorkoutPlayer({ calendar = [], units = [], classId, work
       
       const isLocked = diffDays > 7;
 
-      const unitName = calEntry.unitName || "No Unit Scheduled";
+      const assignedWorkout = calEntry.workoutId ? workoutLibrary.workouts.find(w => w.id === calEntry.workoutId) || null : null;
+      // A day whose only plan is a workout has no unitName - show that it's a workout day
+      // instead of the misleading "No Unit Scheduled", since the Workout column already
+      // names and links the specific workout.
+      const unitName = calEntry.unitName || (assignedWorkout ? 'Workout Day' : 'No Unit Scheduled');
       const workoutName = calEntry.activity || calEntry.note || "Regular Class Routine";
 
       const linkedUnit = units.find(u => u.unit.unit_name.toLowerCase() === unitName.toLowerCase());
-      const assignedWorkout = calEntry.workoutId ? workoutLibrary.workouts.find(w => w.id === calEntry.workoutId) || null : null;
 
       return {
         ...calEntry,
