@@ -195,6 +195,13 @@ export async function submitTeammateVote(
   });
 }
 
+/** Polls created before a poll could hold several questions stored one {question, options}
+ *  directly instead of {questions: [...]} - those are dropped on load (not converted; they're
+ *  throwaway test data) so poll.questions is never undefined for what's left. */
+function dropLegacyPolls(raw: Poll[]): Poll[] {
+  return raw.filter((p) => Array.isArray(p?.questions));
+}
+
 /** Live feed of every poll for the admin's Polls tab, same single-shared-doc shape as the
  *  workout library - the admin's own edits (creating a poll) go through local state first
  *  and get debounce-saved back here, same pattern as handleSaveWorkout, so creating a poll
@@ -202,7 +209,8 @@ export async function submitTeammateVote(
 export function subscribeToPolls(onUpdate: (polls: Poll[]) => void): () => void {
   const ref = doc(db, POLLS_COLLECTION, POLLS_DOC);
   return onSnapshot(ref, (snap) => {
-    onUpdate(snap.exists() ? (snap.data() as { polls: Poll[] }).polls || [] : []);
+    const raw = snap.exists() ? (snap.data() as { polls: Poll[] }).polls || [] : [];
+    onUpdate(dropLegacyPolls(raw));
   });
 }
 
@@ -217,7 +225,8 @@ export async function savePolls(polls: Poll[]): Promise<void> {
 export async function loadPolls(): Promise<Poll[]> {
   const ref = doc(db, POLLS_COLLECTION, POLLS_DOC);
   const snap = await getDoc(ref);
-  return snap.exists() ? (snap.data() as { polls: Poll[] }).polls || [] : [];
+  const raw = snap.exists() ? (snap.data() as { polls: Poll[] }).polls || [] : [];
+  return dropLegacyPolls(raw);
 }
 
 /** One vote, keyed by pollId_voterToken so a repeat submission from the same browser is
@@ -239,7 +248,7 @@ export async function submitPollVote(
     const pollsSnap = await tx.get(pollsRef);
     if (!pollsSnap.exists()) throw new Error('Polls not found');
     const data = pollsSnap.data() as { polls: Poll[] };
-    const polls = data.polls.map((p) => {
+    const polls = dropLegacyPolls(data.polls).map((p) => {
       if (p.id !== pollId) return p;
       return {
         ...p,
