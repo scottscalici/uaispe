@@ -433,10 +433,10 @@ export default function TeamCreator({ roster, unit, onGenerate, onDeleteTeamSet 
             <div className="flex flex-col sm:flex-row gap-3">
               <button
                 onClick={toggleHideSkill}
-                title={hideSkill ? 'Show skill values' : 'Hide skill values (useful when students are nearby)'}
+                title={hideSkill ? 'Show skill and compete scores' : 'Hide skill and compete scores (useful when students are nearby)'}
                 className="flex items-center justify-center gap-2 rounded-lg bg-slate-100 px-4 py-2 text-sm font-bold text-slate-600 transition hover:bg-slate-200 shadow-sm"
               >
-                {hideSkill ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />} {hideSkill ? 'Skill Hidden' : 'Hide Skill'}
+                {hideSkill ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />} {hideSkill ? 'Stats Hidden' : 'Hide Stats'}
               </button>
               <button
                 onClick={handleSaveDefault}
@@ -479,9 +479,11 @@ export default function TeamCreator({ roster, unit, onGenerate, onDeleteTeamSet 
                     />
                     <span className="text-sm font-normal text-slate-500">({team.players.length} players)</span>
                   </div>
-                  <div className="text-xs font-bold text-slate-500 bg-white px-2 py-1 rounded border shadow-sm">
-                    Avg Skill: {avgSkill(team.players).toFixed(1)}
-                  </div>
+                  {!hideSkill && (
+                    <div className="text-xs font-bold text-slate-500 bg-white px-2 py-1 rounded border shadow-sm">
+                      Avg Skill: {avgSkill(team.players).toFixed(1)}
+                    </div>
+                  )}
                 </div>
                 <div className="space-y-1">
                   {team.players.map(p => {
@@ -501,10 +503,10 @@ export default function TeamCreator({ roster, unit, onGenerate, onDeleteTeamSet 
                         </span>
                         <div className="flex items-center gap-3 shrink-0">
                           <div className="flex gap-2 text-[10px] sm:text-xs font-bold text-slate-400">
-                            {p.grade && <span className="text-purple-500 hidden sm:inline">{p.grade}</span>}
+                            {!hideSkill && p.grade && <span className="text-purple-500 hidden sm:inline">{p.grade}</span>}
                             <span className={p.gender === 'F' ? 'text-pink-500' : 'text-blue-500'}>{p.gender}</span>
                             {!hideSkill && <span>S:{p.skill}</span>}
-                            <span className="hidden sm:inline">C:{p.compete}</span>
+                            {!hideSkill && <span className="hidden sm:inline">C:{p.compete}</span>}
                           </div>
                           <select
                             value=""

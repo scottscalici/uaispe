@@ -1,17 +1,17 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Shield, Eye, Users, CalendarDays, LogIn, LogOut, BookOpen, LayoutDashboard,
-  ClipboardCheck, Star, ClipboardList, Grid3x3, Trophy, School, Loader2, CloudOff, Cloud, Activity, Plus, Lock, ListTodo, FileSpreadsheet
+  ClipboardCheck, Star, ClipboardList, Grid3x3, Trophy, School, Loader2, CloudOff, Cloud, Activity, Plus, Lock, ListTodo, FileSpreadsheet, BarChart3
 } from 'lucide-react';
 import type {
   ClassData, Unit, ScheduleData, SyllabusData, DailyLogMap, DailyLog, ScoreType,
   QuarterHistoryMap, AttendanceMap, Player, Team, Match, UnitData, DailyTeamSnapshot,
-  WorkoutLibrary, Exercise, Workout, SchoolSettings
+  WorkoutLibrary, Exercise, Workout, SchoolSettings, Poll
 } from './types';
 import { initialClasses } from './data';
 import { seedExercises, seedWorkouts } from './workoutSeedData';
 import { emptyLog } from './grading';
-import { loadAppMeta, ensureInitialData, subscribeToClasses, saveClass, subscribeToWorkoutLibrary, saveWorkoutLibrary, subscribeToSchoolSettings, saveSchoolSettings } from './firestore';
+import { loadAppMeta, ensureInitialData, subscribeToClasses, saveClass, subscribeToWorkoutLibrary, saveWorkoutLibrary, subscribeToSchoolSettings, saveSchoolSettings, subscribeToPolls, savePolls } from './firestore';
 import TeamManager from './components/TeamManager';
 import ScheduleStandings from './components/ScheduleStandings';
 import UnitSyllabus from './components/UnitSyllabus';
@@ -27,8 +27,10 @@ import DailyPlanner from './components/DailyPlanner';
 import WorkoutBuilder from './components/WorkoutBuilder';
 import WeatherWidget, { WeatherHeaderBadge } from './components/WeatherWidget';
 import VotePage from './components/VotePage';
+import PollVotePage from './components/PollVotePage';
+import PollsManager from './components/PollsManager';
 
-type AdminView = 'teams' | 'schedule' | 'attendance' | 'roster' | 'calendar' | 'builder' | 'leaderboards';
+type AdminView = 'teams' | 'schedule' | 'attendance' | 'roster' | 'calendar' | 'builder' | 'leaderboards' | 'polls';
 type PublicView = 'syllabus' | 'dashboard' | 'leaderboards' | 'workout';
 
 const allPlayerIds = (c: ClassData): string[] => c.roster?.map((p) => p.id) || [];
@@ -51,8 +53,9 @@ const genMatchId = () => Date.now() + Math.floor(Math.random() * 100000);
 const ADMIN_SESSION_KEY = 'pe_admin_authed';
 
 export default function App() {
-  const [route, setRoute] = useState<'student' | 'admin_login' | 'admin' | 'vote'>(() => {
+  const [route, setRoute] = useState<'student' | 'admin_login' | 'admin' | 'vote' | 'poll'>(() => {
     if (window.location.hash.startsWith('#vote')) return 'vote';
+    if (window.location.hash.startsWith('#poll')) return 'poll';
     if (window.location.hash !== '#admin') return 'student';
     return sessionStorage.getItem(ADMIN_SESSION_KEY) === '1' ? 'admin' : 'admin_login';
   });
@@ -85,6 +88,10 @@ export default function App() {
   const workoutSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [schoolSettings, setSchoolSettings] = useState<SchoolSettings | null>(null);
+
+  const [polls, setPolls] = useState<Poll[]>([]);
+  const skipNextPollsSave = useRef(true);
+  const pollsSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const activeClass = classes.find((c) => c.id === activeClassId) || classes[0];
 
@@ -271,6 +278,24 @@ export default function App() {
     const unsubscribe = subscribeToSchoolSettings(setSchoolSettings);
     return unsubscribe;
   }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToPolls((loaded) => {
+      skipNextPollsSave.current = true;
+      setPolls(loaded);
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    if (skipNextPollsSave.current) { skipNextPollsSave.current = false; return; }
+    if (pollsSaveTimer.current) clearTimeout(pollsSaveTimer.current);
+    pollsSaveTimer.current = setTimeout(async () => {
+      try { await savePolls(polls); } catch (err) {}
+    }, 800);
+  }, [polls]);
+
+  const handleCreatePoll = (poll: Poll) => setPolls((prev) => [poll, ...prev]);
 
   const handleSaveSchoolSettings = (settings: SchoolSettings) => {
     setSchoolSettings(settings);
@@ -657,6 +682,10 @@ export default function App() {
     return <VotePage />;
   }
 
+  if (route === 'poll') {
+    return <PollVotePage />;
+  }
+
   if (route === 'admin_login') {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-slate-100 p-4">
@@ -720,6 +749,7 @@ export default function App() {
               <NavButton active={adminView === 'builder'} onClick={() => setAdminView('builder')} icon={<Grid3x3 className="h-4 w-4" />}>Builder</NavButton>
               <NavButton active={adminView === 'calendar'} onClick={() => setAdminView('calendar')} icon={<CalendarDays className="h-4 w-4" />}>Calendar</NavButton>
               <NavButton active={adminView === 'leaderboards'} onClick={() => setAdminView('leaderboards')} icon={<Star className="h-4 w-4" />}>Leaderboards</NavButton>
+              <NavButton active={adminView === 'polls'} onClick={() => setAdminView('polls')} icon={<BarChart3 className="h-4 w-4" />}>Polls</NavButton>
             </nav>
           ) : (
             <nav className="flex flex-wrap items-center gap-2">
@@ -859,7 +889,7 @@ export default function App() {
                       </button>
                     </div>
                     {calendarSubTab === 'calendar' ? (
-                      <MasterCalendarBuilder key={`cal-${activeClassId}`} calendar={activeClass.masterCalendar || []} classId={activeClassId} onSave={(cal) => updateClass(c => ({ ...c, masterCalendar: cal }))} />
+                      <MasterCalendarBuilder key={`cal-${activeClassId}`} calendar={activeClass.masterCalendar || []} classId={activeClassId} workoutLibrary={workoutLibrary} onSave={(cal) => updateClass(c => ({ ...c, masterCalendar: cal }))} />
                     ) : calendarSubTab === 'planner' ? (
                       <DailyPlanner key={`plan-${activeClassId}`} calendar={activeClass.masterCalendar || []} units={activeClass.units || []} workoutLibrary={workoutLibrary} onUpdateCalendarDay={(dateStr, updates) => updateClass(c => ({ ...c, masterCalendar: (c.masterCalendar || []).map(day => day.fecha === dateStr ? { ...day, ...updates } : day) }))} onAssignWorkout={handleAssignWorkout} />
                     ) : calendarSubTab === 'workouts' ? (
@@ -879,6 +909,7 @@ export default function App() {
                   activeUnitId={activeUnitData.id}
                 />
               )
+              : adminView === 'polls' ? <PollsManager polls={polls} onCreatePoll={handleCreatePoll} />
               : <UnitScheduleBuilder key={`builder-${unit.unit_id}`} unitName={unit.unit_name} onUpdateUnitName={handleUpdateUnitName} syllabus={syllabus} schedule={schedule} teamNames={teamNames} teamSets={unit.teamSets} calendar={activeClass.masterCalendar || []} roster={roster} unit={unit} allUnits={activeClass.units} dailyTeams={activeClass.dailyTeams || {}} onUpdateSyllabus={handleUpdateSyllabus} onAddMatch={handleAddMatch} onUpdateMatch={handleUpdateMatch} onDeleteMatch={handleDeleteMatch} onGenerateTeams={handleGenerateTeams} onMovePlayer={handleMovePlayer} onDeleteTeamSet={handleDeleteTeamSet} onSetParentSportType={handleSetParentSportType} />}
 
               {adminView === 'builder' && (

@@ -6,7 +6,7 @@ import {
   runTransaction,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import type { ClassData, WorkoutLibrary, SchoolSettings } from './types';
+import type { ClassData, WorkoutLibrary, SchoolSettings, Poll } from './types';
 import { initialClasses } from './data';
 import { seedExercises, seedWorkouts } from './workoutSeedData';
 import { centralDb } from './firebase';
@@ -17,6 +17,9 @@ const WORKOUT_LIBRARY_DOC = 'data';
 const SETTINGS_COLLECTION = 'pe_settings';
 const SCHOOL_SETTINGS_DOC = 'school';
 const VOTES_COLLECTION = 'pe_teammate_votes';
+const POLLS_COLLECTION = 'pe_poll_data';
+const POLLS_DOC = 'data';
+const POLL_VOTES_COLLECTION = 'pe_poll_votes';
 
 export interface AppMeta {
   classIds: string[];
@@ -187,6 +190,62 @@ export async function submitTeammateVote(
 
     tx.set(voteRef, { classId, unitId, voterId, votedForId, timestamp: Date.now() });
     tx.update(classRef, { units });
+
+    return 'ok';
+  });
+}
+
+/** Live feed of every poll for the admin's Polls tab, same single-shared-doc shape as the
+ *  workout library - the admin's own edits (creating a poll) go through local state first
+ *  and get debounce-saved back here, same pattern as handleSaveWorkout, so creating a poll
+ *  feels instant even if the write to Firestore itself is slow or briefly offline. */
+export function subscribeToPolls(onUpdate: (polls: Poll[]) => void): () => void {
+  const ref = doc(db, POLLS_COLLECTION, POLLS_DOC);
+  return onSnapshot(ref, (snap) => {
+    onUpdate(snap.exists() ? (snap.data() as { polls: Poll[] }).polls || [] : []);
+  });
+}
+
+export async function savePolls(polls: Poll[]): Promise<void> {
+  const ref = doc(db, POLLS_COLLECTION, POLLS_DOC);
+  await setDoc(ref, stripUndefined({ polls }));
+}
+
+/** One-time read for the student-facing link page - it doesn't need live updates, just a
+ *  consistent snapshot of every poll's question/options to find the one it links to
+ *  (mirrors loadAllClasses). */
+export async function loadPolls(): Promise<Poll[]> {
+  const ref = doc(db, POLLS_COLLECTION, POLLS_DOC);
+  const snap = await getDoc(ref);
+  return snap.exists() ? (snap.data() as { polls: Poll[] }).polls || [] : [];
+}
+
+/** One vote, keyed by pollId_voterToken so a repeat submission from the same browser is
+ *  rejected rather than counted twice - same lockout shape as submitTeammateVote, just
+ *  keyed off a random per-device token instead of a roster id (polls have no roster). */
+export async function submitPollVote(
+  pollId: string,
+  optionId: string,
+  voterToken: string,
+): Promise<VoteResult> {
+  const voteRef = doc(db, POLL_VOTES_COLLECTION, `${pollId}_${voterToken}`);
+  const pollsRef = doc(db, POLLS_COLLECTION, POLLS_DOC);
+
+  return runTransaction(db, async (tx) => {
+    const voteSnap = await tx.get(voteRef);
+    if (voteSnap.exists()) return 'already_voted';
+
+    const pollsSnap = await tx.get(pollsRef);
+    if (!pollsSnap.exists()) throw new Error('Polls not found');
+    const data = pollsSnap.data() as { polls: Poll[] };
+    const polls = data.polls.map((p) =>
+      p.id === pollId
+        ? { ...p, options: p.options.map((o) => (o.id === optionId ? { ...o, votes: o.votes + 1 } : o)) }
+        : p
+    );
+
+    tx.set(voteRef, { pollId, voterToken, optionId, timestamp: Date.now() });
+    tx.update(pollsRef, { polls });
 
     return 'ok';
   });

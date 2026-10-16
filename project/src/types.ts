@@ -82,6 +82,12 @@ export interface Workout {
   circuits: WorkoutCircuit[];
   stations?: WorkoutStation[];
   stationDuration?: number;
+  /** Stations only: seconds for a recovery/rotate phase between stations. Unset/0 keeps the
+   *  original manual-advance flow (one shared work timer, "Next Rotation" clicked by hand).
+   *  Set it >0 and the timer auto-advances on its own - work, then this many seconds to
+   *  recover and rotate, then straight into the next station's work phase - no clicking
+   *  required mid-workout. */
+  stationRestDuration?: number;
 }
 
 export interface WorkoutLibrary {
@@ -305,4 +311,20 @@ export interface SchoolSettings {
   lat: number;
   lon: number;
   classTime: string;
+}
+
+export interface PollOption {
+  id: string;
+  text: string;
+  votes: number;
+}
+
+/** A one-off question the admin sends out as a direct link (e.g. "Football was fun - one
+ *  more day, or move on?"). Not tied to any class/unit - anyone with the link can vote once;
+ *  only the admin's Polls tab ever shows the tallied results. */
+export interface Poll {
+  id: string;
+  question: string;
+  options: PollOption[];
+  createdAt: number;
 }

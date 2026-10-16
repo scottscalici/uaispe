@@ -153,9 +153,12 @@ function CircuitSession({ workout, exercises, onExit }: Props) {
 function StationsSession({ workout, exercises, onExit }: Props) {
   const stations = workout.stations || [];
   const duration = workout.stationDuration || 60;
+  const restDuration = workout.stationRestDuration || 0;
+  const autoAdvance = restDuration > 0;
   const totalRounds = stations.length;
 
   const [round, setRound] = useState(1);
+  const [phase, setPhase] = useState<'work' | 'rest'>('work');
   const [secondsLeft, setSecondsLeft] = useState(duration);
   const [running, setRunning] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -172,21 +175,39 @@ function StationsSession({ workout, exercises, onExit }: Props) {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [running, done, timeUp]);
 
+  // Manual mode just pauses when time runs out, same as before - the teacher calls the
+  // rotation by hand. Auto mode instead flips straight from work into a recovery/rotate
+  // phase, then on to the next station's work phase, with no clicking required mid-workout.
   useEffect(() => {
-    if (timeUp) setRunning(false);
-  }, [timeUp]);
+    if (!timeUp || done) return;
+    if (!autoAdvance) { setRunning(false); return; }
+    if (phase === 'work') {
+      setPhase('rest');
+      setSecondsLeft(restDuration);
+    } else {
+      const nextRound = round + 1;
+      setRound(nextRound);
+      setPhase('work');
+      setSecondsLeft(duration);
+      if (nextRound > totalRounds) setRunning(false);
+    }
+  }, [timeUp, done, autoAdvance, phase, restDuration, duration, round, totalRounds]);
 
   const handleNextRotation = () => {
     setRound((r) => r + 1);
+    setPhase('work');
     setSecondsLeft(duration);
     setRunning(true);
   };
 
   const handleRestart = () => {
     setRound(1);
+    setPhase('work');
     setSecondsLeft(duration);
     setRunning(false);
   };
+
+  const resting = autoAdvance && phase === 'rest';
 
   if (totalRounds === 0) {
     return <p className="text-center text-slate-400 italic">This stations workout has no stations yet.</p>;
@@ -209,17 +230,21 @@ function StationsSession({ workout, exercises, onExit }: Props) {
     );
   }
 
+  const manualTimeUp = !autoAdvance && timeUp;
+
   return (
     <>
-      <div className={`rounded-2xl border-2 p-6 text-center shadow-sm transition-colors ${timeUp ? 'border-red-300 bg-red-50 animate-pulse' : 'border-purple-300 bg-purple-50'}`}>
-        <p className={`mb-1 text-xs font-black uppercase tracking-widest ${timeUp ? 'text-red-600' : 'text-purple-600'}`}>
-          Round {round} of {totalRounds}
+      <div className={`rounded-2xl border-2 p-6 text-center shadow-sm transition-colors ${manualTimeUp ? 'border-red-300 bg-red-50 animate-pulse' : resting ? 'border-amber-300 bg-amber-50' : 'border-purple-300 bg-purple-50'}`}>
+        <p className={`mb-1 text-xs font-black uppercase tracking-widest ${manualTimeUp ? 'text-red-600' : resting ? 'text-amber-600' : 'text-purple-600'}`}>
+          Station {round} of {totalRounds} {resting ? '- Recover & Rotate' : '- Work'}
         </p>
-        <div className={`mx-auto mb-2 text-7xl font-black tabular-nums ${timeUp ? 'text-red-600' : 'text-purple-700'}`}>
+        <div className={`mx-auto mb-2 text-7xl font-black tabular-nums ${manualTimeUp ? 'text-red-600' : resting ? 'text-amber-600' : 'text-purple-700'}`}>
           {secondsLeft}
         </div>
-        {timeUp ? (
+        {manualTimeUp ? (
           <p className="text-lg font-black text-red-600">Time's Up - Rotate When Ready!</p>
+        ) : resting ? (
+          <p className="text-lg font-black text-amber-600">Recover & Rotate to the Next Station!</p>
         ) : (
           <p className="text-xs font-semibold uppercase tracking-wide text-purple-500">Small groups working at their station</p>
         )}
