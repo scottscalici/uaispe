@@ -222,10 +222,11 @@ export async function loadPolls(): Promise<Poll[]> {
 
 /** One vote, keyed by pollId_voterToken so a repeat submission from the same browser is
  *  rejected rather than counted twice - same lockout shape as submitTeammateVote, just
- *  keyed off a random per-device token instead of a roster id (polls have no roster). */
+ *  keyed off a random per-device token instead of a roster id (polls have no roster).
+ *  answers covers every question in the poll, submitted together in one visit. */
 export async function submitPollVote(
   pollId: string,
-  optionId: string,
+  answers: { questionId: string; optionId: string }[],
   voterToken: string,
 ): Promise<VoteResult> {
   const voteRef = doc(db, POLL_VOTES_COLLECTION, `${pollId}_${voterToken}`);
@@ -238,13 +239,19 @@ export async function submitPollVote(
     const pollsSnap = await tx.get(pollsRef);
     if (!pollsSnap.exists()) throw new Error('Polls not found');
     const data = pollsSnap.data() as { polls: Poll[] };
-    const polls = data.polls.map((p) =>
-      p.id === pollId
-        ? { ...p, options: p.options.map((o) => (o.id === optionId ? { ...o, votes: o.votes + 1 } : o)) }
-        : p
-    );
+    const polls = data.polls.map((p) => {
+      if (p.id !== pollId) return p;
+      return {
+        ...p,
+        questions: p.questions.map((q) => {
+          const answer = answers.find((a) => a.questionId === q.id);
+          if (!answer) return q;
+          return { ...q, options: q.options.map((o) => (o.id === answer.optionId ? { ...o, votes: o.votes + 1 } : o)) };
+        }),
+      };
+    });
 
-    tx.set(voteRef, { pollId, voterToken, optionId, timestamp: Date.now() });
+    tx.set(voteRef, { pollId, voterToken, answers, timestamp: Date.now() });
     tx.update(pollsRef, { polls });
 
     return 'ok';

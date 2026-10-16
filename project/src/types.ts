@@ -317,14 +317,24 @@ export interface PollOption {
   id: string;
   text: string;
   votes: number;
+  /** If this option is picked, the student submits right here - any later questions in the
+   *  poll are skipped rather than required (e.g. picking "Move on" from football skips
+   *  "same teams or new teams?" and "8v8 or 4v4?" entirely). */
+  endsPoll?: boolean;
 }
 
-/** A one-off question the admin sends out as a direct link (e.g. "Football was fun - one
- *  more day, or move on?"). Not tied to any class/unit - anyone with the link can vote once;
- *  only the admin's Polls tab ever shows the tallied results. */
-export interface Poll {
+export interface PollQuestion {
   id: string;
   question: string;
   options: PollOption[];
+}
+
+/** A one-off poll the admin sends out as a direct link - one or more questions (e.g.
+ *  "Keep playing football or move on?", "Same teams or new teams?", "8v8 or 4v4?"),
+ *  answered together in one visit. Not tied to any class/unit - anyone with the link can
+ *  vote once; only the admin's Polls tab ever shows the tallied results. */
+export interface Poll {
+  id: string;
+  questions: PollQuestion[];
   createdAt: number;
 }

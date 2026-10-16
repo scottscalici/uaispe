@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Vote, CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Vote, CheckCircle2, AlertTriangle, Loader2, Check } from 'lucide-react';
 import type { Poll } from '../types';
 import { loadPolls, submitPollVote } from '../firestore';
 
@@ -36,6 +36,7 @@ function getVoterToken(): string {
 export default function PollVotePage() {
   const [step, setStep] = useState<Step>('loading');
   const [poll, setPoll] = useState<Poll | null>(null);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const pollId = parsePollId();
@@ -54,11 +55,28 @@ export default function PollVotePage() {
       .catch(() => setStep('error'));
   }, []);
 
-  const handleVote = async (optionId: string) => {
-    if (!poll) return;
+  // Every question up to and including the first one whose picked answer ends the poll -
+  // later questions never become required, and disappear once that answer is chosen (e.g.
+  // picking "Move on" means the team/format questions after it don't apply).
+  const activeQuestions = useMemo(() => {
+    if (!poll) return [];
+    const result = [];
+    for (const q of poll.questions) {
+      result.push(q);
+      const selected = q.options.find((o) => o.id === answers[q.id]);
+      if (selected?.endsPoll) break;
+    }
+    return result;
+  }, [poll, answers]);
+
+  const allAnswered = activeQuestions.length > 0 && activeQuestions.every((q) => !!answers[q.id]);
+
+  const handleSubmit = async () => {
+    if (!poll || !allAnswered) return;
     setStep('submitting');
     try {
-      const result = await submitPollVote(poll.id, optionId, getVoterToken());
+      const answerList = activeQuestions.map((q) => ({ questionId: q.id, optionId: answers[q.id] }));
+      const result = await submitPollVote(poll.id, answerList, getVoterToken());
       try { localStorage.setItem(votedKey(poll.id), '1'); } catch { /* ignore */ }
       setStep(result === 'ok' ? 'done' : 'already_voted');
     } catch {
@@ -94,21 +112,46 @@ export default function PollVotePage() {
         )}
 
         {step === 'vote' && poll && (
-          <div className="space-y-2">
-            <p className="rounded-xl border border-slate-200 bg-white p-4 text-center text-lg font-bold text-slate-800 shadow-sm">
-              {poll.question}
-            </p>
-            <div className="space-y-2">
-              {poll.options.map((o) => (
-                <button
-                  key={o.id}
-                  onClick={() => handleVote(o.id)}
-                  className="w-full rounded-xl border border-slate-200 bg-white p-4 text-left text-lg font-bold text-slate-800 shadow-sm transition hover:border-indigo-300 hover:bg-indigo-50"
-                >
-                  {o.text}
-                </button>
-              ))}
-            </div>
+          <div className="space-y-4">
+            {activeQuestions.map((q, qi) => (
+              <div key={q.id} className="space-y-2">
+                <div className="rounded-xl bg-indigo-600 px-4 py-3 shadow-sm">
+                  {poll.questions.length > 1 && (
+                    <p className="text-xs font-bold uppercase tracking-wide text-indigo-200 mb-0.5">
+                      Question {qi + 1} of {activeQuestions.length}
+                    </p>
+                  )}
+                  <p className="text-lg font-black text-white leading-snug">{q.question}</p>
+                </div>
+                <div className="space-y-1.5">
+                  {q.options.map((o) => {
+                    const selected = answers[q.id] === o.id;
+                    return (
+                      <button
+                        key={o.id}
+                        onClick={() => setAnswers((prev) => ({ ...prev, [q.id]: o.id }))}
+                        className={`w-full flex items-center justify-between gap-2 rounded-xl border p-3.5 text-left font-semibold shadow-sm transition ${
+                          selected
+                            ? 'border-indigo-400 bg-indigo-50 text-indigo-900'
+                            : 'border-slate-200 bg-white text-slate-700 hover:border-indigo-200 hover:bg-indigo-50/50'
+                        }`}
+                      >
+                        {o.text}
+                        {selected && <Check className="h-5 w-5 flex-shrink-0 text-indigo-600" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+
+            <button
+              onClick={handleSubmit}
+              disabled={!allAnswered}
+              className="w-full rounded-xl bg-indigo-600 py-3.5 text-center text-lg font-bold text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Submit Vote
+            </button>
           </div>
         )}
 
