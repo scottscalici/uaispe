@@ -337,4 +337,8 @@ export interface Poll {
   id: string;
   questions: PollQuestion[];
   createdAt: number;
+  /** Number of students who have submitted this poll - tracked directly rather than derived
+   *  by summing every option's votes, since one submission can touch up to one option per
+   *  question and summing those would count that single vote several times over. */
+  totalVotes?: number;
 }

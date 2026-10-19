@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { Lock, ArrowRight, History, CalendarDays, Dumbbell } from 'lucide-react';
 import type { CalendarDay, UnitData, WorkoutLibrary } from '../types';
 import WorkoutSession from './WorkoutSession';
@@ -6,24 +6,15 @@ import WorkoutSession from './WorkoutSession';
 interface Props {
   calendar: CalendarDay[];
   units: UnitData[];
-  classId: string;
   workoutLibrary: WorkoutLibrary;
   onNavigateToUnit: (unitId: string) => void;
 }
 
 type CycleFilter = 'A' | 'B' | 'All';
 
-export default function WorkoutPlayer({ calendar = [], units = [], classId, workoutLibrary, onNavigateToUnit }: Props) {
-  // Intelligently default to 'A' or 'B' based on the class name
-  const [cycle, setCycle] = useState<CycleFilter>(
-    classId.includes('A') ? 'A' : classId.includes('B') ? 'B' : 'All'
-  );
+export default function WorkoutPlayer({ calendar = [], units = [], workoutLibrary, onNavigateToUnit }: Props) {
+  const [cycle, setCycle] = useState<CycleFilter>('All');
   const [activeWorkoutId, setActiveWorkoutId] = useState<string | null>(null);
-
-  // If the user switches classes in the top nav, update the filter instantly
-  useEffect(() => {
-    setCycle(classId.includes('A') ? 'A' : classId.includes('B') ? 'B' : 'All');
-  }, [classId]);
 
   const { activeData, archivedData } = useMemo(() => {
     const validDays = calendar.filter(d => 

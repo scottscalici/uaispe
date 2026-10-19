@@ -929,10 +929,9 @@ export default function App() {
                 key={`workout-${activeClassId}`}
                 calendar={activeClass.masterCalendar || []}
                 units={activeClass.units || []}
-                classId={activeClassId}
                 workoutLibrary={workoutLibrary}
                 onNavigateToUnit={(unitId) => {
-                  setStudentUnitId(unitId); 
+                  setStudentUnitId(unitId);
                   setPublicView('dashboard');
                 }} 
               />

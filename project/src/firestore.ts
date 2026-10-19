@@ -202,6 +202,15 @@ function dropLegacyPolls(raw: Poll[]): Poll[] {
   return raw.filter((p) => Array.isArray(p?.questions));
 }
 
+/** Polls voted on before totalVotes existed have no such field yet. Every voter always
+ *  answers the first question (skip logic only ever skips later ones), so that question's
+ *  option tally is a reliable stand-in for how many people actually voted - used here so a
+ *  poll with real history doesn't silently reset its count to 0/1 the moment this ships. */
+export function effectiveTotalVotes(p: Poll): number {
+  if (typeof p.totalVotes === 'number') return p.totalVotes;
+  return p.questions[0]?.options.reduce((s, o) => s + o.votes, 0) ?? 0;
+}
+
 /** Live feed of every poll for the admin's Polls tab, same single-shared-doc shape as the
  *  workout library - the admin's own edits (creating a poll) go through local state first
  *  and get debounce-saved back here, same pattern as handleSaveWorkout, so creating a poll
@@ -252,6 +261,7 @@ export async function submitPollVote(
       if (p.id !== pollId) return p;
       return {
         ...p,
+        totalVotes: effectiveTotalVotes(p) + 1,
         questions: p.questions.map((q) => {
           const answer = answers.find((a) => a.questionId === q.id);
           if (!answer) return q;
