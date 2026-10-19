@@ -891,7 +891,7 @@ export default function App() {
                     {calendarSubTab === 'calendar' ? (
                       <MasterCalendarBuilder key={`cal-${activeClassId}`} calendar={activeClass.masterCalendar || []} classId={activeClassId} workoutLibrary={workoutLibrary} onSave={(cal) => updateClass(c => ({ ...c, masterCalendar: cal }))} />
                     ) : calendarSubTab === 'planner' ? (
-                      <DailyPlanner key={`plan-${activeClassId}`} calendar={activeClass.masterCalendar || []} units={activeClass.units || []} workoutLibrary={workoutLibrary} onUpdateCalendarDay={(dateStr, updates) => updateClass(c => ({ ...c, masterCalendar: (c.masterCalendar || []).map(day => day.fecha === dateStr ? { ...day, ...updates } : day) }))} onAssignWorkout={handleAssignWorkout} />
+                      <DailyPlanner key={`plan-${activeClassId}`} calendar={activeClass.masterCalendar || []} units={activeClass.units || []} classId={activeClassId} workoutLibrary={workoutLibrary} onUpdateCalendarDay={(dateStr, updates) => updateClass(c => ({ ...c, masterCalendar: (c.masterCalendar || []).map(day => day.fecha === dateStr ? { ...day, ...updates } : day) }))} onAssignWorkout={handleAssignWorkout} />
                     ) : calendarSubTab === 'workouts' ? (
                       <WorkoutBuilder library={workoutLibrary} onSaveExercise={handleSaveExercise} onDeleteExercise={handleDeleteExercise} onSaveWorkout={handleSaveWorkout} onDeleteWorkout={handleDeleteWorkout} />
                     ) : (
@@ -932,9 +932,9 @@ export default function App() {
                 classId={activeClassId}
                 workoutLibrary={workoutLibrary}
                 onNavigateToUnit={(unitId) => {
-                  setStudentUnitId(unitId); 
+                  setStudentUnitId(unitId);
                   setPublicView('dashboard');
-                }} 
+                }}
               />
           ) : publicView === 'syllabus' ? <UnitSyllabus key={`syl-${unit.unit_id}`} syllabus={syllabus} unitName={unit.unit_name} />
             : <PublicDashboard key={`pub-${unit.unit_id}`} unit={unit} schedule={schedule} />
