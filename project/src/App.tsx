@@ -929,11 +929,12 @@ export default function App() {
                 key={`workout-${activeClassId}`}
                 calendar={activeClass.masterCalendar || []}
                 units={activeClass.units || []}
+                classId={activeClassId}
                 workoutLibrary={workoutLibrary}
                 onNavigateToUnit={(unitId) => {
                   setStudentUnitId(unitId);
                   setPublicView('dashboard');
-                }} 
+                }}
               />
           ) : publicView === 'syllabus' ? <UnitSyllabus key={`syl-${unit.unit_id}`} syllabus={syllabus} unitName={unit.unit_name} />
             : <PublicDashboard key={`pub-${unit.unit_id}`} unit={unit} schedule={schedule} />

@@ -6,18 +6,24 @@ import WorkoutSession from './WorkoutSession';
 interface Props {
   calendar: CalendarDay[];
   units: UnitData[];
+  classId: string;
   workoutLibrary: WorkoutLibrary;
   onNavigateToUnit: (unitId: string) => void;
 }
 
-export default function WorkoutPlayer({ calendar = [], units = [], workoutLibrary, onNavigateToUnit }: Props) {
+export default function WorkoutPlayer({ calendar = [], units = [], classId, workoutLibrary, onNavigateToUnit }: Props) {
   const [activeWorkoutId, setActiveWorkoutId] = useState<string | null>(null);
 
-  // Every school day shows here regardless of A/B cycle - a student just needs "what's
-  // happening in my class next", not a toggle that hides whichever cycle isn't selected.
-  // The (A)/(B) label stays on each row for reference only.
+  // Each class only ever meets on one cycle (e.g. "3A" is the A-Day section, "3B" is the
+  // B-Day section) - there's nothing to toggle, so this filters automatically and permanently
+  // off the class itself, never shown as a user-facing control.
+  const cycle = classId.includes('A') ? 'A' : classId.includes('B') ? 'B' : null;
+
   const { activeData, archivedData } = useMemo(() => {
-    const validDays = calendar.filter(d => d.status === 'school' || d.status === 'half-day');
+    const validDays = calendar.filter(d =>
+      (!cycle || d.ciclo === cycle) &&
+      (d.status === 'school' || d.status === 'half-day')
+    );
 
     const d = new Date();
     const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -31,13 +37,18 @@ export default function WorkoutPlayer({ calendar = [], units = [], workoutLibrar
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
       
       const isLocked = diffDays > 7;
+      // Workouts unlock as soon as the date is today or has passed, not up to a week ahead
+      // like the unit preview - no starting a workout early, days before it's assigned for.
+      const isWorkoutLocked = diffDays > 0;
 
       const assignedWorkout = calEntry.workoutId ? workoutLibrary.workouts.find(w => w.id === calEntry.workoutId) || null : null;
       // A day whose only plan is a workout has no unitName - show that it's a workout day
       // instead of the misleading "No Unit Scheduled", since the Workout column already
       // names and links the specific workout.
       const unitName = calEntry.unitName || (assignedWorkout ? 'Workout Day' : 'No Unit Scheduled');
-      const workoutName = calEntry.activity || calEntry.note || "Regular Class Routine";
+      // calEntry.note is the shared staff calendar's own annotation (e.g. "Extravaganza") -
+      // not meant for students, so it never surfaces here, only calEntry.activity does.
+      const workoutName = calEntry.activity || "Regular Class Routine";
 
       const linkedUnit = units.find(u => u.unit.unit_name.toLowerCase() === unitName.toLowerCase());
 
@@ -45,6 +56,7 @@ export default function WorkoutPlayer({ calendar = [], units = [], workoutLibrar
         ...calEntry,
         isPast,
         isLocked,
+        isWorkoutLocked,
         unitName,
         workoutName,
         linkedUnitId: linkedUnit?.id || null,
@@ -66,7 +78,7 @@ export default function WorkoutPlayer({ calendar = [], units = [], workoutLibrar
     const active = mostRecentPast ? [mostRecentPast, ...futureDays] : [...futureDays];
 
     return { activeData: active, archivedData: archived };
-  }, [calendar, units, workoutLibrary]);
+  }, [cycle, calendar, units, workoutLibrary]);
 
   if (calendar.length === 0) {
     return (
@@ -87,7 +99,6 @@ export default function WorkoutPlayer({ calendar = [], units = [], workoutLibrar
       <td className="p-4 font-bold text-blue-700 w-[20%] align-top">
         Day {row.dia} ({row.ciclo})
         <div className="text-xs font-normal text-slate-400 mt-0.5">{row.fecha}</div>
-        {row.note && !row.activity && <div className="text-xs font-bold text-amber-600 mt-1">{row.note}</div>}
       </td>
       <td className="p-4 w-[40%] font-bold text-slate-800 align-top">
         {row.isLocked ? (
@@ -105,8 +116,8 @@ export default function WorkoutPlayer({ calendar = [], units = [], workoutLibrar
         )}
       </td>
       <td className="p-4 w-[40%] text-slate-700 align-top">
-        {row.isLocked ? (
-          <span className="text-slate-400 italic">{row.workoutName}</span>
+        {row.isWorkoutLocked ? (
+          <span className="text-slate-400 italic flex items-center gap-1.5"><Lock className="w-3.5 h-3.5" /> {row.workoutName}</span>
         ) : row.assignedWorkout ? (
           <button
             onClick={() => setActiveWorkoutId(row.assignedWorkout!.id)}
