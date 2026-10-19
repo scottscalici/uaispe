@@ -10,18 +10,15 @@ interface Props {
   onNavigateToUnit: (unitId: string) => void;
 }
 
-type CycleFilter = 'A' | 'B' | 'All';
-
 export default function WorkoutPlayer({ calendar = [], units = [], workoutLibrary, onNavigateToUnit }: Props) {
-  const [cycle, setCycle] = useState<CycleFilter>('All');
   const [activeWorkoutId, setActiveWorkoutId] = useState<string | null>(null);
 
+  // Every school day shows here regardless of A/B cycle - a student just needs "what's
+  // happening in my class next", not a toggle that hides whichever cycle isn't selected.
+  // The (A)/(B) label stays on each row for reference only.
   const { activeData, archivedData } = useMemo(() => {
-    const validDays = calendar.filter(d => 
-      (cycle === 'All' || d.ciclo === cycle) && 
-      (d.status === 'school' || d.status === 'half-day')
-    );
-    
+    const validDays = calendar.filter(d => d.status === 'school' || d.status === 'half-day');
+
     const d = new Date();
     const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const todayDateObj = new Date(todayStr + 'T00:00:00');
@@ -69,7 +66,7 @@ export default function WorkoutPlayer({ calendar = [], units = [], workoutLibrar
     const active = mostRecentPast ? [mostRecentPast, ...futureDays] : [...futureDays];
 
     return { activeData: active, archivedData: archived };
-  }, [cycle, calendar, units, workoutLibrary]);
+  }, [calendar, units, workoutLibrary]);
 
   if (calendar.length === 0) {
     return (
@@ -129,24 +126,6 @@ export default function WorkoutPlayer({ calendar = [], units = [], workoutLibrar
       <h1 className="text-center text-3xl font-black text-blue-700 mb-6 flex items-center justify-center gap-3">
         <CalendarDays className="h-8 w-8 text-blue-600" /> Daily Class Log
       </h1>
-      
-      <div className="flex justify-center mb-6">
-        <div className="flex bg-slate-100 p-1.5 rounded-lg border border-slate-200">
-          {(['All', 'A', 'B'] as CycleFilter[]).map((c) => (
-            <button 
-              key={c}
-              onClick={() => setCycle(c)} 
-              className={`px-6 py-2 rounded-md font-bold text-sm transition-all ${
-                cycle === c 
-                  ? 'bg-blue-600 text-white shadow-md' 
-                  : 'bg-transparent text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              {c === 'All' ? 'All Days' : `${c} Day`}
-            </button>
-          ))}
-        </div>
-      </div>
 
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
