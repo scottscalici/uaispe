@@ -6,7 +6,7 @@ import {
   runTransaction,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import type { ClassData, WorkoutLibrary, SchoolSettings, Poll } from './types';
+import type { ClassData, WorkoutLibrary, SchoolSettings, Poll, QuartersConfig } from './types';
 import { initialClasses } from './data';
 import { seedExercises, seedWorkouts } from './workoutSeedData';
 import { centralDb } from './firebase';
@@ -16,6 +16,7 @@ const WORKOUT_LIBRARY_COLLECTION = 'pe_workout_library';
 const WORKOUT_LIBRARY_DOC = 'data';
 const SETTINGS_COLLECTION = 'pe_settings';
 const SCHOOL_SETTINGS_DOC = 'school';
+const QUARTERS_DOC = 'quarters';
 const VOTES_COLLECTION = 'pe_teammate_votes';
 const POLLS_COLLECTION = 'pe_poll_data';
 const POLLS_DOC = 'data';
@@ -159,6 +160,20 @@ export function subscribeToSchoolSettings(
 export async function saveSchoolSettings(settings: SchoolSettings): Promise<void> {
   const ref = doc(db, SETTINGS_COLLECTION, SCHOOL_SETTINGS_DOC);
   await setDoc(ref, stripUndefined(settings));
+}
+
+/** Quarter dates are school-wide, shared by both A Day and B Day classes, same single-doc
+ *  shape as school settings. */
+export function subscribeToQuarters(onUpdate: (config: QuartersConfig) => void): () => void {
+  const ref = doc(db, SETTINGS_COLLECTION, QUARTERS_DOC);
+  return onSnapshot(ref, (snap) => {
+    onUpdate(snap.exists() ? (snap.data() as QuartersConfig) : { quarters: [] });
+  });
+}
+
+export async function saveQuarters(config: QuartersConfig): Promise<void> {
+  const ref = doc(db, SETTINGS_COLLECTION, QUARTERS_DOC);
+  await setDoc(ref, stripUndefined(config));
 }
 
 export type VoteResult = 'ok' | 'already_voted';

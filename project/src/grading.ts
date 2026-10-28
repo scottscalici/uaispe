@@ -1,4 +1,4 @@
-import type { DailyLog, ScoreType, InfractionEntry } from './types';
+import type { DailyLog, ScoreType, InfractionEntry, DailyLogMap, Quarter } from './types';
 
 export const DEFAULT_POSSIBLE = 10;
 export const TARDY_DEDUCTION = 1;
@@ -139,25 +139,14 @@ export function computeDayScore(log: DailyLog): DayScore {
   const infractionPoints = log.infractions.reduce((sum, i) => sum + i.points, 0);
 
   switch (log.scoreType) {
-    case 'present':
-      return {
-        earned: Math.max(0, DEFAULT_POSSIBLE + log.bonusPoints - infractionPoints),
-        possible: DEFAULT_POSSIBLE,
-        exempt: false,
-        label: formatLabel(DEFAULT_POSSIBLE + log.bonusPoints - infractionPoints, DEFAULT_POSSIBLE, log),
-      };
-    case 'tardy':
-      return {
-        earned: Math.max(0, DEFAULT_POSSIBLE - TARDY_DEDUCTION + log.bonusPoints - infractionPoints),
-        possible: DEFAULT_POSSIBLE,
-        exempt: false,
-        label: formatLabel(
-          DEFAULT_POSSIBLE - TARDY_DEDUCTION + log.bonusPoints - infractionPoints,
-          DEFAULT_POSSIBLE,
-          log,
-          'Tardy',
-        ),
-      };
+    case 'present': {
+      const earned = Math.max(0, DEFAULT_POSSIBLE + log.bonusPoints - infractionPoints);
+      return { earned, possible: DEFAULT_POSSIBLE, exempt: false, label: formatLabel(earned, DEFAULT_POSSIBLE, log) };
+    }
+    case 'tardy': {
+      const earned = Math.max(0, DEFAULT_POSSIBLE - TARDY_DEDUCTION + log.bonusPoints - infractionPoints);
+      return { earned, possible: DEFAULT_POSSIBLE, exempt: false, label: formatLabel(earned, DEFAULT_POSSIBLE, log, 'Tardy') };
+    }
     case 'bonus':
       return {
         earned: DEFAULT_POSSIBLE + log.bonusPoints - infractionPoints,
@@ -166,11 +155,13 @@ export function computeDayScore(log: DailyLog): DayScore {
         label: formatLabel(DEFAULT_POSSIBLE + log.bonusPoints - infractionPoints, DEFAULT_POSSIBLE, log, 'Bonus'),
       };
     case 'zero':
+      // A "zero day" is a free pass, not a literal zero - still an F, but never an
+      // unrecoverable hole (5/10, not 0/10).
       return {
-        earned: 0,
+        earned: 5,
         possible: DEFAULT_POSSIBLE,
         exempt: false,
-        label: formatLabel(0, DEFAULT_POSSIBLE, log, 'Zero'),
+        label: formatLabel(5, DEFAULT_POSSIBLE, log, 'Zero'),
       };
     case 'excused':
       return { earned: 0, possible: 0, exempt: true, label: 'EX (0/0)' };
@@ -238,4 +229,110 @@ export function computeQuarterTotals(
 ): QuarterTotals {
   const percentage = possible > 0 ? Math.round((earned / possible) * 100) : 0;
   return { earned, possible, percentage };
+}
+
+/** One student's cumulative grade for a quarter: earned over possible, summed only across
+ *  the days that were actually logged for that student within the quarter's dates - a day
+ *  nobody logged anything for (the class didn't meet, or it was simply never recorded)
+ *  just isn't counted, rather than being treated as a missed requirement. Absent/excused
+ *  days are 0/0 (via computeDayScore), so they drop out of the ratio automatically too. */
+export function computeCumulativeScore(
+  gradebook: Record<string, DailyLogMap>,
+  playerId: string,
+  quarter: Quarter,
+): QuarterTotals {
+  let earned = 0;
+  let possible = 0;
+
+  Object.entries(gradebook).forEach(([dateStr, dayLogs]) => {
+    if (dateStr < quarter.startDate || dateStr > quarter.endDate) return;
+    const log = dayLogs[playerId];
+    if (!log) return;
+
+    const dayScore = computeDayScore(log);
+    earned += dayScore.earned;
+    possible += dayScore.possible;
+  });
+
+  return computeQuarterTotals(earned, possible);
+}
+
+export const GRADE_COMMENT_STANDING_LINE =
+  'Points lost are for disrespect (to yourself, others, the teacher, or equipment) or for lack of effort.';
+
+/** 'YYYY-MM-DD' -> "Sept 26" - built from the date string's own components rather than
+ *  parsing it with `new Date(dateStr)`, which JS treats as UTC midnight and can shift a day
+ *  backward once converted to a local timezone that's behind UTC. */
+function formatShortDate(dateStr: string): string {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function signedPoints(points: number): string {
+  return points > 0 ? `plus ${points}` : `minus ${Math.abs(points)}`;
+}
+
+/** One student's export comment for a quarter: a standing line explaining what deductions
+ *  are generally for, then only the dated events worth mentioning - tardy, zero day, excused,
+ *  and any day with a nonzero point adjustment (deduction or bonus) - plus a per-day note
+ *  wherever one was typed in, even on an otherwise full-credit day. Full-credit days with no
+ *  note, and absences, are left out entirely so the comment stays short. */
+export function buildGradeComment(
+  gradebook: Record<string, DailyLogMap>,
+  playerId: string,
+  quarter: Quarter,
+): string {
+  const dates = Object.keys(gradebook)
+    .filter((d) => d >= quarter.startDate && d <= quarter.endDate)
+    .sort();
+
+  const entries: string[] = [];
+
+  dates.forEach((dateStr) => {
+    const log = gradebook[dateStr]?.[playerId];
+    if (!log) return;
+    if (log.scoreType === 'absent') return;
+
+    let status: string | null = null;
+    if (log.scoreType === 'tardy') {
+      status = log.bonusPoints ? `tardy, ${signedPoints(log.bonusPoints)}` : 'tardy';
+    } else if (log.scoreType === 'zero') {
+      status = 'zero day';
+    } else if (log.scoreType === 'excused') {
+      status = 'excused';
+    } else if ((log.scoreType === 'present' || log.scoreType === 'bonus') && log.bonusPoints) {
+      status = signedPoints(log.bonusPoints);
+    }
+
+    const note = log.note?.trim();
+    if (!status && !note) return;
+
+    const text = status && note ? `${status} (${note})` : status || note;
+    entries.push(`${formatShortDate(dateStr)}: ${text}.`);
+  });
+
+  return [GRADE_COMMENT_STANDING_LINE, ...entries].join(' ');
+}
+
+export interface GradebookGap {
+  date: string;
+  missingPlayerIds: string[];
+}
+
+/** Finds days this class actually met (per the dates passed in) where one or more active
+ *  students never got a log entry at all - catches "I forgot to fill this day in" before it
+ *  silently drops out of the cumulative average instead of counting against the student. */
+export function findGradebookGaps(
+  classMeetingDates: string[],
+  gradebook: Record<string, DailyLogMap>,
+  activePlayerIds: string[],
+): GradebookGap[] {
+  const gaps: GradebookGap[] = [];
+  classMeetingDates.forEach((date) => {
+    const dayLogs = gradebook[date] || {};
+    const missingPlayerIds = activePlayerIds.filter((id) => !dayLogs[id]);
+    if (missingPlayerIds.length > 0) gaps.push({ date, missingPlayerIds });
+  });
+  return gaps.sort((a, b) => a.date.localeCompare(b.date));
 }

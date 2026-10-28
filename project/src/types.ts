@@ -12,6 +12,10 @@ export interface Player {
   availability?: 'active' | 'injured' | 'out';
   scheduledAbsences?: { id: string; date: string; reason: string }[];
   teammateVotes?: number;
+  /** Schoology's unique student ID, set once via the roster import match tool. Admin-only -
+   *  never shown in any student-facing view; the site's own shorthand display name (`name`)
+   *  never changes because of this. */
+  schoologyId?: string;
 }
 
 export interface LessonPlanItem {
@@ -311,6 +315,20 @@ export interface SchoolSettings {
   lat: number;
   lon: number;
   classTime: string;
+}
+
+/** A single grading quarter - school-wide, not per-class, since both A Day and B Day
+ *  sections share the same quarter dates (they just meet a different number of times,
+ *  which the earned-over-possible math absorbs). startDate/endDate are 'YYYY-MM-DD'. */
+export interface Quarter {
+  id: string;
+  label: string;
+  startDate: string;
+  endDate: string;
+}
+
+export interface QuartersConfig {
+  quarters: Quarter[];
 }
 
 export interface PollOption {

@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { UserPlus, Upload, Trash2, Edit2, Check, X, Users, Grid, Lock } from 'lucide-react';
+import { UserPlus, Upload, Trash2, Edit2, Check, X, Users, Grid, Lock, FileSpreadsheet } from 'lucide-react';
 import type { Player, Unit, FloorGrid } from '../types';
 import LockerManager from './LockerManager';
+import RosterImport from './RosterImport';
 
 interface Props {
   roster: Player[];
@@ -16,7 +17,7 @@ interface Props {
 }
 
 export default function RosterManager({ roster, floorGrid, onAddPlayer, onUpdatePlayer, onDeletePlayer, onUpdateFloorGrid }: Props) {
-  const [view, setView] = useState<'roster' | 'grid' | 'locks'>('roster');
+  const [view, setView] = useState<'roster' | 'grid' | 'locks' | 'import'>('roster');
   const [newPlayerName, setNewPlayerName] = useState('');
   const [newPlayerGender, setNewPlayerGender] = useState('M');
   const [newPlayerSkill, setNewPlayerSkill] = useState(5);
@@ -95,11 +96,17 @@ export default function RosterManager({ roster, floorGrid, onAddPlayer, onUpdate
           >
             <Grid className="w-4 h-4" /> Floor Grid
           </button>
-          <button 
+          <button
             onClick={() => setView('locks')}
             className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-bold transition-all ${view === 'locks' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
           >
             <Lock className="w-4 h-4" /> Locks
+          </button>
+          <button
+            onClick={() => setView('import')}
+            className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-bold transition-all ${view === 'import' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+          >
+            <FileSpreadsheet className="w-4 h-4" /> Schoology Import
           </button>
         </div>
       </div>
@@ -243,7 +250,9 @@ export default function RosterManager({ roster, floorGrid, onAddPlayer, onUpdate
           </div>
         </div>
       ) : view === 'locks' ? (
-        <LockerManager /> 
+        <LockerManager />
+      ) : view === 'import' ? (
+        <RosterImport roster={roster} onUpdatePlayer={onUpdatePlayer} />
       ) : null}
     </div>
   );

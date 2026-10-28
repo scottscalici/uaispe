@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, X, Clock, Ghost, UserX, BadgeCheck, HeartPulse, MinusCircle, RotateCcw, List, LayoutGrid, Eraser } from 'lucide-react';
+import { Check, X, Clock, Ghost, UserX, BadgeCheck, HeartPulse, MinusCircle, RotateCcw, List, LayoutGrid, Eraser, StickyNote } from 'lucide-react';
 import type { Player, Unit, DailyLogMap, QuarterHistoryMap, FloorGrid, ScoreType } from '../types';
 import { emptyLog } from '../grading';
 
@@ -55,6 +55,13 @@ export default function AttendanceTracker({ roster, logs, floorGrid, classMeetsT
     onUpdateLog(playerId, { ...current, bonusPoints: 0 });
   };
 
+  const handleSetNote = (playerId: string) => {
+    const current = logs[playerId] || emptyLog('present');
+    const next = window.prompt("Optional note for today - only shows up in the Schoology export comment, students never see it:", current.note || '');
+    if (next === null) return;
+    onUpdateLog(playerId, { ...current, note: next });
+  };
+
   const handleToggleInjured = (player: Player) => {
     onUpdatePlayer(player.id, { availability: player.availability === 'injured' ? 'active' : 'injured' });
   };
@@ -107,6 +114,11 @@ export default function AttendanceTracker({ roster, logs, floorGrid, classMeetsT
               {bonus} pts <RotateCcw className="h-2.5 w-2.5" />
             </button>
           )}
+          {log?.note && (
+            <button onClick={() => handleSetNote(player.id)} title={log.note} className="flex shrink-0 items-center gap-0.5 rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-bold text-sky-700 hover:bg-sky-200">
+              <StickyNote className="h-2.5 w-2.5" /> Note
+            </button>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <button onClick={() => onQuickSet(player.id, 'present')} className={`p-1.5 rounded transition-colors ${type === 'present' ? 'bg-emerald-500 text-white shadow-inner' : 'bg-slate-100 text-slate-400 hover:bg-emerald-100 hover:text-emerald-600'}`} title="Present (10/10)">
@@ -133,6 +145,9 @@ export default function AttendanceTracker({ roster, logs, floorGrid, classMeetsT
               <MinusCircle className="h-4 w-4" />
             </button>
           )}
+          <button onClick={() => handleSetNote(player.id)} className={`rounded p-1.5 transition-colors ${log?.note ? 'bg-sky-100 text-sky-600' : 'bg-slate-100 text-slate-400 hover:bg-sky-100 hover:text-sky-600'}`} title="Optional note for today (shows in the Schoology export comment)">
+            <StickyNote className="h-4 w-4" />
+          </button>
         </div>
       </div>
     );
