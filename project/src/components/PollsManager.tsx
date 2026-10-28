@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { BarChart3, Plus, Trash2, ChevronDown, ChevronUp, Link2, Check } from 'lucide-react';
 import type { Poll, PollQuestion } from '../types';
+import { effectiveTotalVotes } from '../firestore';
 
 interface Props {
   polls: Poll[];
@@ -61,6 +62,7 @@ export default function PollsManager({ polls, onCreatePoll }: Props) {
         options: q.options.map((o, oi) => ({ id: `opt_${oi}`, text: o.text, votes: 0, endsPoll: o.endsPoll || undefined })),
       })),
       createdAt: Date.now(),
+      totalVotes: 0,
     };
     onCreatePoll(poll);
     setQuestions([emptyQuestion()]);
@@ -153,7 +155,7 @@ export default function PollsManager({ polls, onCreatePoll }: Props) {
           </div>
         )}
         {polls.map((poll) => {
-          const totalVotes = poll.questions.reduce((sum, q) => sum + q.options.reduce((s, o) => s + o.votes, 0), 0);
+          const totalVotes = effectiveTotalVotes(poll);
           const expanded = expandedId === poll.id;
           return (
             <div key={poll.id} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">

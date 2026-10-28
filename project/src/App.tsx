@@ -1,17 +1,17 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Shield, Eye, Users, CalendarDays, LogIn, LogOut, BookOpen, LayoutDashboard,
-  ClipboardCheck, Star, ClipboardList, Grid3x3, Trophy, School, Loader2, CloudOff, Cloud, Activity, Plus, Lock, ListTodo, FileSpreadsheet, BarChart3
+  ClipboardCheck, Star, ClipboardList, Grid3x3, Trophy, School, Loader2, CloudOff, Cloud, Activity, Plus, Lock, ListTodo, FileSpreadsheet, BarChart3, GraduationCap
 } from 'lucide-react';
 import type {
   ClassData, Unit, ScheduleData, SyllabusData, DailyLogMap, DailyLog, ScoreType,
   QuarterHistoryMap, AttendanceMap, Player, Team, Match, UnitData, DailyTeamSnapshot,
-  WorkoutLibrary, Exercise, Workout, SchoolSettings, Poll
+  WorkoutLibrary, Exercise, Workout, SchoolSettings, Poll, Quarter
 } from './types';
 import { initialClasses } from './data';
 import { seedExercises, seedWorkouts } from './workoutSeedData';
 import { emptyLog } from './grading';
-import { loadAppMeta, ensureInitialData, subscribeToClasses, saveClass, subscribeToWorkoutLibrary, saveWorkoutLibrary, subscribeToSchoolSettings, saveSchoolSettings, subscribeToPolls, savePolls } from './firestore';
+import { loadAppMeta, ensureInitialData, subscribeToClasses, saveClass, subscribeToWorkoutLibrary, saveWorkoutLibrary, subscribeToSchoolSettings, saveSchoolSettings, subscribeToPolls, savePolls, subscribeToQuarters, saveQuarters } from './firestore';
 import TeamManager from './components/TeamManager';
 import ScheduleStandings from './components/ScheduleStandings';
 import UnitSyllabus from './components/UnitSyllabus';
@@ -29,8 +29,9 @@ import WeatherWidget, { WeatherHeaderBadge } from './components/WeatherWidget';
 import VotePage from './components/VotePage';
 import PollVotePage from './components/PollVotePage';
 import PollsManager from './components/PollsManager';
+import GradeExport from './components/GradeExport';
 
-type AdminView = 'teams' | 'schedule' | 'attendance' | 'roster' | 'calendar' | 'builder' | 'leaderboards' | 'polls';
+type AdminView = 'teams' | 'schedule' | 'attendance' | 'roster' | 'calendar' | 'builder' | 'leaderboards' | 'polls' | 'grades';
 type PublicView = 'syllabus' | 'dashboard' | 'leaderboards' | 'workout';
 
 const allPlayerIds = (c: ClassData): string[] => c.roster?.map((p) => p.id) || [];
@@ -92,6 +93,10 @@ export default function App() {
   const [polls, setPolls] = useState<Poll[]>([]);
   const skipNextPollsSave = useRef(true);
   const pollsSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [quarters, setQuarters] = useState<Quarter[]>([]);
+  const skipNextQuartersSave = useRef(true);
+  const quartersSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const activeClass = classes.find((c) => c.id === activeClassId) || classes[0];
 
@@ -296,6 +301,22 @@ export default function App() {
   }, [polls]);
 
   const handleCreatePoll = (poll: Poll) => setPolls((prev) => [poll, ...prev]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToQuarters((config) => {
+      skipNextQuartersSave.current = true;
+      setQuarters(config.quarters);
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    if (skipNextQuartersSave.current) { skipNextQuartersSave.current = false; return; }
+    if (quartersSaveTimer.current) clearTimeout(quartersSaveTimer.current);
+    quartersSaveTimer.current = setTimeout(async () => {
+      try { await saveQuarters({ quarters }); } catch (err) {}
+    }, 800);
+  }, [quarters]);
 
   const handleSaveSchoolSettings = (settings: SchoolSettings) => {
     setSchoolSettings(settings);
@@ -578,6 +599,18 @@ export default function App() {
     return { ...c, gradebook: nextGradebook };
   });
 
+  // Quick fill for missing gradebook days before an export - every (date, player) pair gets
+  // full credit in one batched update, rather than one write per slot.
+  const handleFillGradebookGaps = (fills: { date: string; playerId: string }[]) => updateClass((c) => {
+    const nextGradebook = { ...(c.gradebook || {}) };
+    fills.forEach(({ date, playerId }) => {
+      const dateLogs = { ...(nextGradebook[date] || {}) };
+      if (!dateLogs[playerId]) dateLogs[playerId] = emptyLog('present');
+      nextGradebook[date] = dateLogs;
+    });
+    return { ...c, gradebook: nextGradebook };
+  });
+
   const handleCreateNewUnit = () => {
     const timestamp = Date.now();
     const sharedLinkID = `link_${timestamp}`; 
@@ -750,6 +783,7 @@ export default function App() {
               <NavButton active={adminView === 'calendar'} onClick={() => setAdminView('calendar')} icon={<CalendarDays className="h-4 w-4" />}>Calendar</NavButton>
               <NavButton active={adminView === 'leaderboards'} onClick={() => setAdminView('leaderboards')} icon={<Star className="h-4 w-4" />}>Leaderboards</NavButton>
               <NavButton active={adminView === 'polls'} onClick={() => setAdminView('polls')} icon={<BarChart3 className="h-4 w-4" />}>Polls</NavButton>
+              <NavButton active={adminView === 'grades'} onClick={() => setAdminView('grades')} icon={<GraduationCap className="h-4 w-4" />}>Grades</NavButton>
             </nav>
           ) : (
             <nav className="flex flex-wrap items-center gap-2">
@@ -891,7 +925,7 @@ export default function App() {
                     {calendarSubTab === 'calendar' ? (
                       <MasterCalendarBuilder key={`cal-${activeClassId}`} calendar={activeClass.masterCalendar || []} classId={activeClassId} workoutLibrary={workoutLibrary} onSave={(cal) => updateClass(c => ({ ...c, masterCalendar: cal }))} />
                     ) : calendarSubTab === 'planner' ? (
-                      <DailyPlanner key={`plan-${activeClassId}`} calendar={activeClass.masterCalendar || []} units={activeClass.units || []} workoutLibrary={workoutLibrary} onUpdateCalendarDay={(dateStr, updates) => updateClass(c => ({ ...c, masterCalendar: (c.masterCalendar || []).map(day => day.fecha === dateStr ? { ...day, ...updates } : day) }))} onAssignWorkout={handleAssignWorkout} />
+                      <DailyPlanner key={`plan-${activeClassId}`} calendar={activeClass.masterCalendar || []} units={activeClass.units || []} classId={activeClassId} workoutLibrary={workoutLibrary} onUpdateCalendarDay={(dateStr, updates) => updateClass(c => ({ ...c, masterCalendar: (c.masterCalendar || []).map(day => day.fecha === dateStr ? { ...day, ...updates } : day) }))} onAssignWorkout={handleAssignWorkout} />
                     ) : calendarSubTab === 'workouts' ? (
                       <WorkoutBuilder library={workoutLibrary} onSaveExercise={handleSaveExercise} onDeleteExercise={handleDeleteExercise} onSaveWorkout={handleSaveWorkout} onDeleteWorkout={handleDeleteWorkout} />
                     ) : (
@@ -910,6 +944,7 @@ export default function App() {
                 />
               )
               : adminView === 'polls' ? <PollsManager polls={polls} onCreatePoll={handleCreatePoll} />
+              : adminView === 'grades' ? <GradeExport quarters={quarters} onSaveQuarters={setQuarters} roster={roster} gradebook={gradebook} classId={activeClassId} masterCalendar={activeClass.masterCalendar || []} onFillGaps={handleFillGradebookGaps} />
               : <UnitScheduleBuilder key={`builder-${unit.unit_id}`} unitName={unit.unit_name} onUpdateUnitName={handleUpdateUnitName} syllabus={syllabus} schedule={schedule} teamNames={teamNames} teamSets={unit.teamSets} calendar={activeClass.masterCalendar || []} roster={roster} unit={unit} allUnits={activeClass.units} dailyTeams={activeClass.dailyTeams || {}} onUpdateSyllabus={handleUpdateSyllabus} onAddMatch={handleAddMatch} onUpdateMatch={handleUpdateMatch} onDeleteMatch={handleDeleteMatch} onGenerateTeams={handleGenerateTeams} onMovePlayer={handleMovePlayer} onDeleteTeamSet={handleDeleteTeamSet} onSetParentSportType={handleSetParentSportType} />}
 
               {adminView === 'builder' && (
@@ -932,9 +967,9 @@ export default function App() {
                 classId={activeClassId}
                 workoutLibrary={workoutLibrary}
                 onNavigateToUnit={(unitId) => {
-                  setStudentUnitId(unitId); 
+                  setStudentUnitId(unitId);
                   setPublicView('dashboard');
-                }} 
+                }}
               />
           ) : publicView === 'syllabus' ? <UnitSyllabus key={`syl-${unit.unit_id}`} syllabus={syllabus} unitName={unit.unit_name} />
             : <PublicDashboard key={`pub-${unit.unit_id}`} unit={unit} schedule={schedule} />

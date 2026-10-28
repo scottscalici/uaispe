@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Check, X, Clock, Ghost, UserX, BadgeCheck, HeartPulse, MinusCircle, RotateCcw, List, LayoutGrid, Eraser } from 'lucide-react';
+import { Check, X, Clock, Ghost, UserX, BadgeCheck, HeartPulse, Frown, BatteryLow, RotateCcw, List, LayoutGrid, Eraser, StickyNote } from 'lucide-react';
 import type { Player, Unit, DailyLogMap, QuarterHistoryMap, FloorGrid, ScoreType } from '../types';
-import { emptyLog } from '../grading';
+import { emptyLog, IB_LEARNER_TRAITS } from '../grading';
 
 interface Props {
   roster: Player[];
@@ -28,6 +28,7 @@ const bgColorFor = (type: ScoreType | undefined) =>
 
 export default function AttendanceTracker({ roster, logs, floorGrid, classMeetsToday, onQuickSet, onMarkAll, onClearAll, onUpdatePlayer, onUpdateLog }: Props) {
   const [view, setView] = useState<'list' | 'grid'>('list');
+  const [traitPicker, setTraitPicker] = useState<{ playerId: string; selected: string[] } | null>(null);
 
   if (!classMeetsToday) {
     return (
@@ -44,15 +45,45 @@ export default function AttendanceTracker({ roster, logs, floorGrid, classMeetsT
   const assignedIds = Object.values(floorGrid).map(s => s.playerId).filter(Boolean);
   const unassignedPlayers = roster.filter(p => !assignedIds.includes(p.id));
 
-  const handleDeduct = (playerId: string) => {
+  // Tapping either deduct button takes the point off immediately with a plain fallback
+  // tag ("Principled" is the umbrella for any form of disrespect; "Poor Effort" stays
+  // literal since it's not an IB trait) - then opens an optional popup to pick specific
+  // IB Learner Profile traits instead, each with its own canned explanation on export.
+  const handleDeduct = (playerId: string, fallbackReason: string) => {
     const current = logs[playerId] || emptyLog('present');
-    onUpdateLog(playerId, { ...current, bonusPoints: (current.bonusPoints || 0) - 1 });
+    const warnings = current.warnings.includes(fallbackReason) ? current.warnings : [...current.warnings, fallbackReason];
+    onUpdateLog(playerId, { ...current, bonusPoints: (current.bonusPoints || 0) - 1, warnings });
+    setTraitPicker({ playerId, selected: [] });
   };
 
   const handleResetDeduction = (playerId: string) => {
     const current = logs[playerId];
     if (!current) return;
-    onUpdateLog(playerId, { ...current, bonusPoints: 0 });
+    onUpdateLog(playerId, { ...current, bonusPoints: 0, warnings: [] });
+  };
+
+  const toggleTrait = (trait: string) => {
+    setTraitPicker((prev) => {
+      if (!prev) return prev;
+      const selected = prev.selected.includes(trait) ? prev.selected.filter((t) => t !== trait) : [...prev.selected, trait];
+      return { ...prev, selected };
+    });
+  };
+
+  const applyTraitPicker = () => {
+    if (!traitPicker || traitPicker.selected.length === 0) { setTraitPicker(null); return; }
+    const current = logs[traitPicker.playerId] || emptyLog('present');
+    const warnings = [...current.warnings];
+    traitPicker.selected.forEach((t) => { if (!warnings.includes(t)) warnings.push(t); });
+    onUpdateLog(traitPicker.playerId, { ...current, warnings });
+    setTraitPicker(null);
+  };
+
+  const handleSetNote = (playerId: string) => {
+    const current = logs[playerId] || emptyLog('present');
+    const next = window.prompt("Optional note for today - only shows up in the Schoology export comment, students never see it:", current.note || '');
+    if (next === null) return;
+    onUpdateLog(playerId, { ...current, note: next });
   };
 
   const handleToggleInjured = (player: Player) => {
@@ -104,7 +135,12 @@ export default function AttendanceTracker({ roster, logs, floorGrid, classMeetsT
           )}
           {bonus < 0 && (
             <button onClick={() => handleResetDeduction(player.id)} title="Tap to clear deduction" className="flex shrink-0 items-center gap-0.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700 hover:bg-red-200">
-              {bonus} pts <RotateCcw className="h-2.5 w-2.5" />
+              {bonus} pts{log?.warnings.length ? ` (${log.warnings.join(', ')})` : ''} <RotateCcw className="h-2.5 w-2.5" />
+            </button>
+          )}
+          {log?.note && (
+            <button onClick={() => handleSetNote(player.id)} title={log.note} className="flex shrink-0 items-center gap-0.5 rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-bold text-sky-700 hover:bg-sky-200">
+              <StickyNote className="h-2.5 w-2.5" /> Note
             </button>
           )}
         </div>
@@ -129,10 +165,18 @@ export default function AttendanceTracker({ roster, logs, floorGrid, classMeetsT
             <HeartPulse className="h-4 w-4" />
           </button>
           {canDeduct && (
-            <button onClick={() => handleDeduct(player.id)} className="rounded p-1.5 bg-slate-100 text-slate-400 hover:bg-red-100 hover:text-red-600 transition-colors" title="Deduct 1 point (still participating)">
-              <MinusCircle className="h-4 w-4" />
-            </button>
+            <>
+              <button onClick={() => handleDeduct(player.id, 'Principled')} className="rounded p-1.5 bg-slate-100 text-slate-400 hover:bg-red-100 hover:text-red-600 transition-colors" title="Deduct 1 point - Disrespect">
+                <Frown className="h-4 w-4" />
+              </button>
+              <button onClick={() => handleDeduct(player.id, 'Poor Effort')} className="rounded p-1.5 bg-slate-100 text-slate-400 hover:bg-red-100 hover:text-red-600 transition-colors" title="Deduct 1 point - Poor Effort">
+                <BatteryLow className="h-4 w-4" />
+              </button>
+            </>
           )}
+          <button onClick={() => handleSetNote(player.id)} className={`rounded p-1.5 transition-colors ${log?.note ? 'bg-sky-100 text-sky-600' : 'bg-slate-100 text-slate-400 hover:bg-sky-100 hover:text-sky-600'}`} title="Optional note for today (shows in the Schoology export comment)">
+            <StickyNote className="h-4 w-4" />
+          </button>
         </div>
       </div>
     );
@@ -227,6 +271,32 @@ export default function AttendanceTracker({ roster, logs, floorGrid, classMeetsT
             </div>
           )}
         </>
+      )}
+
+      {traitPicker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setTraitPicker(null)}>
+          <div className="w-full max-w-sm rounded-xl bg-white p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="mb-1 text-sm font-bold text-slate-800">
+              {roster.find((p) => p.id === traitPicker.playerId)?.name} - which trait needs work?
+            </h3>
+            <p className="mb-3 text-xs text-slate-500">Optional - pick any that apply to add a specific note to the Schoology comment. The point is already deducted either way.</p>
+            <div className="mb-4 grid grid-cols-2 gap-1.5 max-h-72 overflow-y-auto">
+              {IB_LEARNER_TRAITS.map((trait) => (
+                <button
+                  key={trait}
+                  onClick={() => toggleTrait(trait)}
+                  className={`rounded-lg border px-2 py-1.5 text-xs font-bold transition-colors ${traitPicker.selected.includes(trait) ? 'border-blue-500 bg-blue-500 text-white' : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-blue-300'}`}
+                >
+                  {trait}
+                </button>
+              ))}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setTraitPicker(null)} className="rounded-lg px-3 py-1.5 text-sm font-bold text-slate-500 hover:bg-slate-100">Skip</button>
+              <button onClick={applyTraitPicker} className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-bold text-white hover:bg-blue-700">Save</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

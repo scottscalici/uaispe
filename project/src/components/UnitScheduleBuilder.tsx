@@ -512,11 +512,15 @@ function ScheduleEditor({
   const [time, setTime] = useState('11:15');
   const [location, setLocation] = useState('Main Gym');
 
+  // Each class only ever meets on one cycle (e.g. "3A" is the A-Day section) - locked
+  // permanently off the class itself so scheduling a match never offers the other cycle's dates.
+  const cycle = unit.class_id.includes('A') ? 'A' : unit.class_id.includes('B') ? 'B' : null;
+
   const upcomingSchoolDays = useMemo(() => {
     return [...calendar]
-      .filter(d => d.status === 'school' || d.status === 'half-day')
+      .filter(d => (d.status === 'school' || d.status === 'half-day') && (!cycle || d.ciclo === cycle))
       .sort((a, b) => a.fecha.localeCompare(b.fecha));
-  }, [calendar]);
+  }, [calendar, cycle]);
 
   const handleEditClick = (m: Match) => {
     setEditingMatchId(m.id);

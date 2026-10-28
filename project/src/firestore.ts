@@ -6,7 +6,7 @@ import {
   runTransaction,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import type { ClassData, WorkoutLibrary, SchoolSettings, Poll } from './types';
+import type { ClassData, WorkoutLibrary, SchoolSettings, Poll, QuartersConfig } from './types';
 import { initialClasses } from './data';
 import { seedExercises, seedWorkouts } from './workoutSeedData';
 import { centralDb } from './firebase';
@@ -16,6 +16,7 @@ const WORKOUT_LIBRARY_COLLECTION = 'pe_workout_library';
 const WORKOUT_LIBRARY_DOC = 'data';
 const SETTINGS_COLLECTION = 'pe_settings';
 const SCHOOL_SETTINGS_DOC = 'school';
+const QUARTERS_DOC = 'quarters';
 const VOTES_COLLECTION = 'pe_teammate_votes';
 const POLLS_COLLECTION = 'pe_poll_data';
 const POLLS_DOC = 'data';
@@ -161,6 +162,20 @@ export async function saveSchoolSettings(settings: SchoolSettings): Promise<void
   await setDoc(ref, stripUndefined(settings));
 }
 
+/** Quarter dates are school-wide, shared by both A Day and B Day classes, same single-doc
+ *  shape as school settings. */
+export function subscribeToQuarters(onUpdate: (config: QuartersConfig) => void): () => void {
+  const ref = doc(db, SETTINGS_COLLECTION, QUARTERS_DOC);
+  return onSnapshot(ref, (snap) => {
+    onUpdate(snap.exists() ? (snap.data() as QuartersConfig) : { quarters: [] });
+  });
+}
+
+export async function saveQuarters(config: QuartersConfig): Promise<void> {
+  const ref = doc(db, SETTINGS_COLLECTION, QUARTERS_DOC);
+  await setDoc(ref, stripUndefined(config));
+}
+
 export type VoteResult = 'ok' | 'already_voted';
 
 /** One teammate vote, keyed by classId_unitId_voterId so a repeat submission for the same
@@ -200,6 +215,15 @@ export async function submitTeammateVote(
  *  throwaway test data) so poll.questions is never undefined for what's left. */
 function dropLegacyPolls(raw: Poll[]): Poll[] {
   return raw.filter((p) => Array.isArray(p?.questions));
+}
+
+/** Polls voted on before totalVotes existed have no such field yet. Every voter always
+ *  answers the first question (skip logic only ever skips later ones), so that question's
+ *  option tally is a reliable stand-in for how many people actually voted - used here so a
+ *  poll with real history doesn't silently reset its count to 0/1 the moment this ships. */
+export function effectiveTotalVotes(p: Poll): number {
+  if (typeof p.totalVotes === 'number') return p.totalVotes;
+  return p.questions[0]?.options.reduce((s, o) => s + o.votes, 0) ?? 0;
 }
 
 /** Live feed of every poll for the admin's Polls tab, same single-shared-doc shape as the
@@ -252,6 +276,7 @@ export async function submitPollVote(
       if (p.id !== pollId) return p;
       return {
         ...p,
+        totalVotes: effectiveTotalVotes(p) + 1,
         questions: p.questions.map((q) => {
           const answer = answers.find((a) => a.questionId === q.id);
           if (!answer) return q;
