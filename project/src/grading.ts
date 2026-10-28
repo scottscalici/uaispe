@@ -24,6 +24,7 @@ export const IB_LEARNER_TRAITS = [
   'Principled',
   'Open-Minded',
   'Caring',
+  'Risk-Taker',
   'Communicator',
   'Balanced',
   'Reflective',
@@ -31,6 +32,23 @@ export const IB_LEARNER_TRAITS = [
   'Inquirer',
   'Knowledgeable',
 ] as const;
+
+/** Canned, student-facing explanation for each IB Learner Profile trait - picked (optionally,
+ *  after a point deduction) to say specifically what a student needs to work on, instead of
+ *  just a generic "disrespect" or "poor effort" tag. Surfaces verbatim in the Schoology
+ *  export comment. Plain tags with no entry here (e.g. "Poor Effort") get no elaboration. */
+export const TRAIT_NOTES: Record<string, string> = {
+  'Risk-Taker': 'You need to try new skills or roles even when they might not succeed right away.',
+  'Caring': 'You need to look out for teammates so the activity is enjoyable for everyone; your participation helps that.',
+  'Principled': 'You need to follow the rules, be honest, and respect others, yourself, and the environment.',
+  'Open-Minded': "You need to try new activities and other people's ideas.",
+  'Communicator': 'You need to speak up kindly and listen to teammates.',
+  'Balanced': 'You need to keep emotions in check during competitive moments.',
+  'Reflective': 'You need to think about how your choices affected the team/class.',
+  'Thinker': 'You need to make good decisions.',
+  'Inquirer': 'You need to stay engaged and ask questions instead of checking out.',
+  'Knowledgeable': 'You need to apply what you know about the activity and its rules.',
+};
 
 export interface InfractionCategory {
   id: string;
@@ -276,8 +294,10 @@ function signedPoints(points: number): string {
 /** One student's export comment for a quarter: a standing line explaining what deductions
  *  are generally for, then only the dated events worth mentioning - tardy, zero day, excused,
  *  and any day with a nonzero point adjustment (deduction or bonus) - plus a per-day note
- *  wherever one was typed in, even on an otherwise full-credit day. Full-credit days with no
- *  note, and absences, are left out entirely so the comment stays short. */
+ *  wherever one was typed in, even on an otherwise full-credit day. A deduction also carries
+ *  whichever IB Learner Profile traits were tagged for it (each with its canned explanation),
+ *  or just the plain "Poor Effort" label when no specific trait was picked. Full-credit days
+ *  with no note, and absences, are left out entirely so the comment stays short. */
 export function buildGradeComment(
   gradebook: Record<string, DailyLogMap>,
   playerId: string,
@@ -305,11 +325,17 @@ export function buildGradeComment(
       status = signedPoints(log.bonusPoints);
     }
 
+    const plainTags = log.warnings.filter((w) => !TRAIT_NOTES[w]);
+    const traitSentences = log.warnings.map((w) => TRAIT_NOTES[w]).filter((s): s is string => Boolean(s));
     const note = log.note?.trim();
-    if (!status && !note) return;
+    const extras = [...plainTags, ...traitSentences, note].filter(Boolean) as string[];
 
-    const text = status && note ? `${status} (${note})` : status || note;
-    entries.push(`${formatShortDate(dateStr)}: ${text}.`);
+    if (!status && extras.length === 0) return;
+
+    const explanation = extras.join(' ');
+    let body = status && explanation ? `${status} — ${explanation}` : status || explanation;
+    if (!/[.!?]$/.test(body)) body += '.';
+    entries.push(`${formatShortDate(dateStr)}: ${body}`);
   });
 
   return [GRADE_COMMENT_STANDING_LINE, ...entries].join(' ');
