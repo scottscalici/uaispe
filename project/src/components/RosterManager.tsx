@@ -21,6 +21,7 @@ export default function RosterManager({ roster, floorGrid, onAddPlayer, onUpdate
   const [newPlayerName, setNewPlayerName] = useState('');
   const [newPlayerGender, setNewPlayerGender] = useState('M');
   const [newPlayerSkill, setNewPlayerSkill] = useState(5);
+  const [newPlayerGrade, setNewPlayerGrade] = useState('');
   
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
@@ -35,9 +36,11 @@ export default function RosterManager({ roster, floorGrid, onAddPlayer, onUpdate
       name: newPlayerName.trim(),
       gender: newPlayerGender,
       skill: newPlayerSkill,
-      compete: 5
+      compete: 5,
+      grade: newPlayerGrade || undefined,
     });
     setNewPlayerName('');
+    setNewPlayerGrade('');
   };
 
   const handleSaveEdit = (id: string) => {
@@ -136,6 +139,16 @@ export default function RosterManager({ roster, floorGrid, onAddPlayer, onUpdate
                     <input type="number" min="1" max="10" value={newPlayerSkill} onChange={e => setNewPlayerSkill(Number(e.target.value))} className="w-full border border-slate-300 rounded-lg p-2 outline-none focus:border-blue-500" />
                   </div>
                 </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Grade</label>
+                  <select value={newPlayerGrade} onChange={e => setNewPlayerGrade(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2 outline-none focus:border-blue-500 bg-white">
+                    <option value="">-- Unspecified --</option>
+                    <option value="9">9</option>
+                    <option value="10">10</option>
+                    <option value="11">11</option>
+                    <option value="12">12</option>
+                  </select>
+                </div>
                 <button type="submit" disabled={!newPlayerName.trim()} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-lg transition disabled:opacity-50">
                   Add to Roster
                 </button>
@@ -150,6 +163,7 @@ export default function RosterManager({ roster, floorGrid, onAddPlayer, onUpdate
                   <tr>
                     <th className="px-4 py-3">Name</th>
                     <th className="px-4 py-3 w-20">Gender</th>
+                    <th className="px-4 py-3 w-20">Grade</th>
                     <th className="px-4 py-3 w-20">Skill</th>
                     <th className="px-4 py-3 w-28">Status</th>
                     <th className="px-4 py-3 text-right">Actions</th>
@@ -168,6 +182,15 @@ export default function RosterManager({ roster, floorGrid, onAddPlayer, onUpdate
                         ) : p.name}
                       </td>
                       <td className="px-4 py-2 text-slate-600">{p.gender}</td>
+                      <td className="px-4 py-2">
+                        <select value={p.grade || ''} onChange={e => onUpdatePlayer(p.id, { grade: e.target.value || undefined })} className="bg-transparent border border-transparent hover:border-slate-300 rounded p-1 outline-none">
+                          <option value="">—</option>
+                          <option value="9">9</option>
+                          <option value="10">10</option>
+                          <option value="11">11</option>
+                          <option value="12">12</option>
+                        </select>
+                      </td>
                       <td className="px-4 py-2">
                         <select value={p.skill} onChange={e => onUpdatePlayer(p.id, { skill: Number(e.target.value) })} className="bg-transparent border border-transparent hover:border-slate-300 rounded p-1 outline-none">
                           {[1,2,3,4,5,6,7,8,9,10].map(n => <option key={n} value={n}>{n}</option>)}
@@ -191,7 +214,7 @@ export default function RosterManager({ roster, floorGrid, onAddPlayer, onUpdate
                     </tr>
                   ))}
                   {roster.length === 0 && (
-                    <tr><td colSpan={5} className="text-center py-8 text-slate-400 font-medium">No students in roster.</td></tr>
+                    <tr><td colSpan={6} className="text-center py-8 text-slate-400 font-medium">No students in roster.</td></tr>
                   )}
                 </tbody>
               </table>
