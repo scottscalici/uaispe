@@ -424,6 +424,8 @@ export default function App() {
       if (idx !== -1) { movedPlayer = t.players[idx]; return { ...t, players: t.players.filter((p) => p.id !== playerId) }; }
       return t;
     });
+    // Not currently on any team (e.g. a bench player, back from injury) - add them fresh instead of no-op'ing.
+    if (!movedPlayer) movedPlayer = roster.find((p) => p.id === playerId) || null;
     if (!movedPlayer) return u;
     const target = teams.find((t) => t.id === toTeamId);
     if (target) target.players = [...target.players, movedPlayer];
@@ -488,6 +490,8 @@ export default function App() {
       if (idx !== -1) { movedPlayer = t.players[idx]; return { ...t, players: t.players.filter((p) => p.id !== playerId) }; }
       return t;
     });
+    // Not currently on any team today (e.g. a bench player, back from injury) - add them fresh instead of no-op'ing.
+    if (!movedPlayer) movedPlayer = c.roster.find((p) => p.id === playerId) || null;
     if (!movedPlayer) return c;
     const target = teams.find((t) => t.id === toTeamId);
     if (target) target.players = [...target.players, movedPlayer];
@@ -827,9 +831,10 @@ export default function App() {
           {route === 'admin' ? (
             <>
               {adminView === 'teams' ? (
-                <TeamManager 
-                  key={`teams-${unit.unit_id}-${attendanceDate}`} 
+                <TeamManager
+                  key={`teams-${unit.unit_id}-${attendanceDate}`}
                   unit={unit}
+                  roster={roster}
                   isAdmin={true}
                   dateStr={attendanceDate}
                   classId={activeClassId}
