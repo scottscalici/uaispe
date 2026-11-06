@@ -1,11 +1,12 @@
 import { useState, useMemo } from 'react';
-import { Shield, ArrowRightLeft, Pencil, Check, Printer, Eye, EyeOff, Wand2, CalendarDays, RefreshCw, XCircle } from 'lucide-react';
+import { Shield, ArrowRightLeft, Pencil, Check, Printer, Eye, EyeOff, Wand2, CalendarDays, RefreshCw, XCircle, Users } from 'lucide-react';
 import type { Unit, AttendanceMap, DailyTeamSnapshot, Player, Team } from '../types';
 
 const HIDE_SKILL_KEY = 'pe_hide_skill_values';
 
 interface Props {
   unit: Unit;
+  roster: Player[];
   isAdmin: boolean;
   dateStr: string;
   classId: string;
@@ -26,7 +27,7 @@ interface Props {
 }
 
 export default function TeamManager({
-  unit, isAdmin, dateStr, classId, dailyTeams, attendance,
+  unit, roster, isAdmin, dateStr, classId, dailyTeams, attendance,
   onInitDaily, onClearDaily, onSwapDaily, onMoveDaily, onRenameDaily,
   onSwapMaster, onMoveMaster, onRenameMaster, onPreviewStudentView
 }: Props) {
@@ -56,6 +57,15 @@ export default function TeamManager({
     if (masterSetId === 'base') activeTeams = unit.baseTeams;
     else activeTeams = unit.teamSets?.find(ts => ts.id === masterSetId)?.teams || [];
   }
+
+  // Players not on any team in the current view - e.g. someone injured when teams were first
+  // made who's since been cleared, or a newer roster addition - so they can be added without
+  // regenerating everyone else.
+  const benchPlayers = useMemo(() => {
+    if (activeTeams.length === 0) return [];
+    const assignedIds = new Set(activeTeams.flatMap((t) => t.players.map((p) => p.id)));
+    return roster.filter((p) => p.availability !== 'out' && !assignedIds.has(p.id));
+  }, [activeTeams, roster]);
 
   // --- SMART SUB AI ENGINE (GENDER AWARE + MULTI-TEAM CHECK) ---
   const aiSuggestions = useMemo(() => {
@@ -288,6 +298,39 @@ export default function TeamManager({
              ))}
            </div>
          </div>
+      )}
+
+      {/* BENCH / UNASSIGNED POOL */}
+      {isAdmin && benchPlayers.length > 0 && (
+        <div className="no-print rounded-xl border border-dashed border-amber-300 bg-amber-50 p-4">
+          <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-amber-800">
+            <Users className="h-4 w-4" /> Bench - Not Currently on a Team ({benchPlayers.length})
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {benchPlayers.map((p) => (
+              <div key={p.id} className="flex items-center gap-2 rounded-lg border border-amber-200 bg-white px-3 py-1.5 shadow-sm">
+                <span className="text-sm font-semibold text-slate-700">{p.name}</span>
+                {p.availability === 'injured' && (
+                  <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">Injured</span>
+                )}
+                <select
+                  value=""
+                  onChange={(e) => {
+                    if (!e.target.value) return;
+                    if (viewMode === 'daily') onMoveDaily(p.id, -1, Number(e.target.value));
+                    else onMoveMaster(p.id, -1, Number(e.target.value));
+                  }}
+                  className="text-xs border rounded bg-slate-50 outline-none text-slate-600"
+                >
+                  <option value="" disabled>Add to...</option>
+                  {activeTeams.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* Main Container marked for screen and print */}
