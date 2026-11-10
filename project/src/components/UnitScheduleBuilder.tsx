@@ -614,7 +614,8 @@ function ScheduleEditor({
         ...(matchType === 'solo' ? { winner_player_ids: [] } : {}),
       });
     }
-    setDate('');
+    // Date deliberately stays put after adding - scheduling several events on the same day is
+    // the common case, and re-picking the date each time was the main friction point.
     setSoloEventName('');
   };
 
