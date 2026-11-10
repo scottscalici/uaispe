@@ -161,6 +161,18 @@ export interface Match {
    *  mashup name) and never affect which teams get credit. */
   merged_home_team_ids?: number[];
   merged_away_team_ids?: number[];
+  /** Mini-games only: optional groupings of 2+ of the event's teams into one combined side
+   *  (e.g. two small teams merged into one bigger relay team) - same spirit as a merged
+   *  standard match's constituent teams. Awarding the group a win credits every member team
+   *  id in awardedTeamCounts at once. Any team not listed in a group still shows and awards
+   *  on its own. */
+  minigameGroups?: MinigameTeamGroup[];
+}
+
+export interface MinigameTeamGroup {
+  id: string;
+  name: string;
+  teamIds: number[];
 }
 
 export interface StandingRow {

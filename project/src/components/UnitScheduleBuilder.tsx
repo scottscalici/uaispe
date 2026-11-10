@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Plus, Trash2, BookOpen, CalendarPlus, Save, Swords, Users, Trophy, Pencil, X, Wand2, User, Link as LinkIcon, Unlink, CalendarDays, ListTree, GitMerge } from 'lucide-react';
-import type { SyllabusData, ScheduleData, Match, CalendarDay, MatchType, TeamSet, Unit, Player, Team, UnitData, DailyTeamSnapshot } from '../types';
+import type { SyllabusData, ScheduleData, Match, CalendarDay, MatchType, TeamSet, Unit, Player, Team, UnitData, DailyTeamSnapshot, MinigameTeamGroup } from '../types';
 import TeamCreator from './TeamCreator';
 
 interface Props {
@@ -500,6 +500,9 @@ function ScheduleEditor({
   const [minigameEventName, setMinigameEventName] = useState('');
   const [mergedHomeIds, setMergedHomeIds] = useState<number[]>([]);
   const [mergedAwayIds, setMergedAwayIds] = useState<number[]>([]);
+  const [minigameGroups, setMinigameGroups] = useState<MinigameTeamGroup[]>([]);
+  const [groupDraftTeamIds, setGroupDraftTeamIds] = useState<number[]>([]);
+  const [groupDraftName, setGroupDraftName] = useState('');
 
   const toggleMergedTeam = (side: 'home' | 'away', teamId: number) => {
     const current = side === 'home' ? mergedHomeIds : mergedAwayIds;
@@ -507,6 +510,33 @@ function ScheduleEditor({
     (side === 'home' ? setMergedHomeIds : setMergedAwayIds)(next);
     const defaultName = next.map(id => availableTeamObjects.find(t => t.id === id)?.name).filter(Boolean).join(' / ');
     (side === 'home' ? setHome : setAway)(defaultName);
+  };
+
+  // Mini-games only: the raw teams from whichever daily team set is selected, so a group of
+  // 2+ of them can be combined into one side (e.g. two small teams merged for a relay).
+  const minigameTeamObjects: Team[] = useMemo(() => {
+    if (teamSetId === 'base') return unit.baseTeams;
+    return teamSets.find(ts => ts.id === teamSetId)?.teams || [];
+  }, [teamSetId, unit.baseTeams, teamSets]);
+
+  const groupedTeamIds = new Set(minigameGroups.flatMap(g => g.teamIds));
+  const groupableTeams = minigameTeamObjects.filter(t => !groupedTeamIds.has(t.id));
+
+  const toggleGroupDraftTeam = (teamId: number) => {
+    const next = groupDraftTeamIds.includes(teamId) ? groupDraftTeamIds.filter(id => id !== teamId) : [...groupDraftTeamIds, teamId];
+    setGroupDraftTeamIds(next);
+    setGroupDraftName(next.map(id => minigameTeamObjects.find(t => t.id === id)?.name).filter(Boolean).join(' + '));
+  };
+
+  const addMinigameGroup = () => {
+    if (groupDraftTeamIds.length < 2 || !groupDraftName.trim()) return;
+    setMinigameGroups(prev => [...prev, { id: `grp_${Date.now()}`, name: groupDraftName.trim(), teamIds: groupDraftTeamIds }]);
+    setGroupDraftTeamIds([]);
+    setGroupDraftName('');
+  };
+
+  const removeMinigameGroup = (groupId: string) => {
+    setMinigameGroups(prev => prev.filter(g => g.id !== groupId));
   };
 
   const [date, setDate] = useState('');
@@ -536,6 +566,7 @@ function ScheduleEditor({
     } else if (m.match_type === 'minigame') {
       setTeamSetId(m.team_set_id || 'base');
       setMinigameEventName(m.home_team && m.home_team !== 'Mini-Games' ? m.home_team : '');
+      setMinigameGroups(m.minigameGroups || []);
    } else if (m.match_type === 'bracket') {
       setStandardTeamSetId(m.team_set_id || 'base');
       setHome(m.home_team);
@@ -561,6 +592,9 @@ function ScheduleEditor({
     setMinigameEventName('');
     setMergedHomeIds([]);
     setMergedAwayIds([]);
+    setMinigameGroups([]);
+    setGroupDraftTeamIds([]);
+    setGroupDraftName('');
   };
 
   const handleSave = () => {
@@ -583,7 +617,8 @@ function ScheduleEditor({
         ...matchData,
         team_set_id: teamSetId,
         home_team: minigameEventName.trim() || 'Mini-Games & Relays',
-        away_team: selectedSet ? selectedSet.name : (teamSetId === 'base' ? 'Default Unit Teams' : 'Multiple Teams')
+        away_team: selectedSet ? selectedSet.name : (teamSetId === 'base' ? 'Default Unit Teams' : 'Multiple Teams'),
+        minigameGroups: minigameGroups.length > 0 ? minigameGroups : undefined,
       };
      } else if (matchType === 'bracket') {
       if (!home || !away || !roundName) return;
@@ -617,6 +652,9 @@ function ScheduleEditor({
     // Date deliberately stays put after adding - scheduling several events on the same day is
     // the common case, and re-picking the date each time was the main friction point.
     setSoloEventName('');
+    setMinigameGroups([]);
+    setGroupDraftTeamIds([]);
+    setGroupDraftName('');
   };
 
   const isFormValid = date && (
@@ -732,11 +770,71 @@ function ScheduleEditor({
               </label>
               <label className="block sm:col-span-2">
                 <span className="mb-1 block text-xs font-semibold uppercase text-indigo-500">Select Daily Team Set</span>
-                <select value={teamSetId} onChange={(e) => setTeamSetId(e.target.value)} className="w-full rounded-md border border-indigo-300 px-3 py-2 text-sm bg-indigo-50 font-semibold text-indigo-900 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                <select
+                  value={teamSetId}
+                  onChange={(e) => { setTeamSetId(e.target.value); setMinigameGroups([]); setGroupDraftTeamIds([]); setGroupDraftName(''); }}
+                  className="w-full rounded-md border border-indigo-300 px-3 py-2 text-sm bg-indigo-50 font-semibold text-indigo-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                >
                   <option value="base">🏆 Default Unit Teams</option>
                   {teamSets.map((ts) => <option key={ts.id} value={ts.id}>{ts.name} ({ts.teams.length} teams)</option>)}
                 </select>
               </label>
+
+              <div className="block sm:col-span-2 rounded-md border border-indigo-200 bg-white p-3 space-y-2">
+                <span className="flex items-center gap-1.5 text-xs font-semibold uppercase text-indigo-500">
+                  <GitMerge className="h-3.5 w-3.5" /> Combine Teams (optional)
+                </span>
+                <p className="text-xs text-indigo-400">Merge 2+ of this event's teams into one side - a win for it credits every team in it.</p>
+
+                {minigameGroups.length > 0 && (
+                  <div className="space-y-1.5">
+                    {minigameGroups.map((g) => (
+                      <div key={g.id} className="flex items-center justify-between gap-2 rounded-md bg-indigo-50 border border-indigo-200 px-2.5 py-1.5 text-sm">
+                        <span className="font-semibold text-indigo-900">{g.name}</span>
+                        <button type="button" onClick={() => removeMinigameGroup(g.id)} className="text-indigo-400 hover:text-red-500 transition">
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {groupableTeams.length >= 2 && (
+                  <div className="space-y-2 pt-1 border-t border-slate-100">
+                    <div className="flex flex-wrap gap-1.5">
+                      {groupableTeams.map((t) => (
+                        <button
+                          type="button"
+                          key={t.id}
+                          onClick={() => toggleGroupDraftTeam(t.id)}
+                          className={`rounded-full px-2.5 py-1 text-xs font-bold border transition-colors ${groupDraftTeamIds.includes(t.id) ? 'border-indigo-500 bg-indigo-500 text-white' : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-indigo-300'}`}
+                        >
+                          {t.name}
+                        </button>
+                      ))}
+                    </div>
+                    {groupDraftTeamIds.length >= 2 && (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={groupDraftName}
+                          onChange={(e) => setGroupDraftName(e.target.value)}
+                          placeholder="Combined side name"
+                          className="flex-1 rounded-md border border-indigo-300 px-2.5 py-1.5 text-sm font-semibold text-indigo-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={addMinigameGroup}
+                          disabled={!groupDraftName.trim()}
+                          className="flex items-center gap-1 rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          <Plus className="h-3.5 w-3.5" /> Combine
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </>
           ) : matchType === 'solo' ? (
             <label className="block sm:col-span-2">

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { CalendarDays, Clock, MapPin, BarChart3, Users, Plus, Minus, Trophy, Lock, Unlock, Printer, User } from 'lucide-react';
+import { CalendarDays, Clock, MapPin, BarChart3, Users, Plus, Minus, Trophy, Lock, Unlock, Printer, User, GitMerge } from 'lucide-react';
 import type { ScheduleData, Match, Unit, Player } from '../types';
 import { computeStandings, rankStandings, groupMatchesBySet, resolveMergedSideTeams } from '../standings';
 
@@ -501,6 +501,9 @@ function MatchCard({ match, unit, isAdmin, getLogoUrl, onUpdateScore, onAwardTea
   if (match.match_type === 'minigame') {
     const isBase = !match.team_set_id || match.team_set_id === 'base';
     const displayTeams = isBase ? unit.baseTeams : unit.teamSets?.find((ts: any) => ts.id === match.team_set_id)?.teams;
+    const groups = match.minigameGroups || [];
+    const groupedTeamIds = new Set(groups.flatMap((g: any) => g.teamIds));
+    const ungroupedTeams = displayTeams?.filter((team: any) => !groupedTeamIds.has(team.id));
 
     return (
       <div className={`rounded-xl border bg-white p-4 shadow-sm transition-all ${match.completed ? 'border-emerald-300 bg-emerald-50/20' : 'border-indigo-300 ring-2 ring-indigo-50'}`}>
@@ -518,7 +521,45 @@ function MatchCard({ match, unit, isAdmin, getLogoUrl, onUpdateScore, onAwardTea
           )}
         </div>
         <div className="space-y-2 mt-3">
-          {displayTeams?.map((team: any) => {
+          {groups.map((g: any) => {
+            const count = match.awardedTeamCounts?.[g.teamIds[0]] || 0;
+            const memberNames = g.teamIds.map((id: number) => displayTeams?.find((t: any) => t.id === id)?.name).filter(Boolean).join(' + ');
+            return (
+              <div key={g.id} className="flex items-center justify-between bg-indigo-50 border border-indigo-200 p-2.5 rounded-lg shadow-sm">
+                <div>
+                  <span className="font-bold text-slate-800 text-sm flex items-center gap-1.5"><GitMerge className="h-3.5 w-3.5 text-indigo-500" /> {g.name}</span>
+                  <span className="text-[10px] text-slate-500">{memberNames}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {count > 0 && (
+                    <span className="flex items-center gap-1 bg-emerald-100 text-emerald-700 px-2 py-1 rounded-md text-xs font-black" title="Wins awarded for this event (credited to every team in this side)">
+                      <Trophy className="w-3 h-3" /> {count}
+                    </span>
+                  )}
+                  {editable && !match.completed && (
+                    <div className="flex items-center gap-1">
+                      {count > 0 && (
+                        <button
+                          onClick={() => g.teamIds.forEach((id: number) => onUnawardTeamWin(match.id, id))}
+                          title="Undo one award (for every team in this side)"
+                          className="flex h-7 w-7 items-center justify-center rounded-md bg-slate-100 text-slate-500 shadow-sm transition-all hover:bg-red-100 hover:text-red-600"
+                        >
+                          <Minus className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => g.teamIds.forEach((id: number) => onAwardTeamWin(match.id, id))}
+                        className="flex items-center gap-1 bg-amber-100 text-amber-700 hover:bg-amber-200 hover:scale-105 transition-all px-3 py-1.5 rounded-md text-xs font-black shadow-sm"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> 1 Win
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          {ungroupedTeams?.map((team: any) => {
             const count = match.awardedTeamCounts?.[team.id] || 0;
             return (
               <div key={team.id} className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded-lg shadow-sm">
