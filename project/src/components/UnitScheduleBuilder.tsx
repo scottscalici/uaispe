@@ -395,7 +395,7 @@ function ActivityLog({ unit, schedule, allUnits, calendar, dailyTeams }: any) {
                         const teams = resolveTeams(dayUnit, m.date_str, m.team_set_id);
                         return (
                           <div key={m.id} className="flex flex-wrap items-center gap-2 rounded-md bg-indigo-50/50 border border-indigo-100 px-2.5 py-1.5 text-xs">
-                            <span className="flex items-center gap-1 font-bold text-indigo-700"><Users className="h-3 w-3" /> Mini-Games</span>
+                            <span className="flex items-center gap-1 font-bold text-indigo-700"><Users className="h-3 w-3" /> {m.home_team || 'Mini-Games & Relays'}</span>
                             <span className="text-slate-500">{m.time} - {m.location}</span>
                             <span className="flex flex-wrap gap-1.5">
                               {teams?.map((t: Team) => (
@@ -497,6 +497,7 @@ function ScheduleEditor({
   const [teamSetId, setTeamSetId] = useState('base');
   const [roundName, setRoundName] = useState('Quarterfinals');
   const [soloEventName, setSoloEventName] = useState('');
+  const [minigameEventName, setMinigameEventName] = useState('');
   const [mergedHomeIds, setMergedHomeIds] = useState<number[]>([]);
   const [mergedAwayIds, setMergedAwayIds] = useState<number[]>([]);
 
@@ -534,6 +535,7 @@ function ScheduleEditor({
       setAway(m.away_team);
     } else if (m.match_type === 'minigame') {
       setTeamSetId(m.team_set_id || 'base');
+      setMinigameEventName(m.home_team && m.home_team !== 'Mini-Games' ? m.home_team : '');
    } else if (m.match_type === 'bracket') {
       setStandardTeamSetId(m.team_set_id || 'base');
       setHome(m.home_team);
@@ -556,6 +558,7 @@ function ScheduleEditor({
     setHome('');
     setAway('');
     setSoloEventName('');
+    setMinigameEventName('');
     setMergedHomeIds([]);
     setMergedAwayIds([]);
   };
@@ -576,11 +579,11 @@ function ScheduleEditor({
     } else if (matchType === 'minigame') {
       if (!teamSetId) return;
       const selectedSet = teamSets.find(ts => ts.id === teamSetId);
-      matchData = { 
-        ...matchData, 
-        team_set_id: teamSetId, 
-        home_team: 'Mini-Games', 
-        away_team: selectedSet ? selectedSet.name : (teamSetId === 'base' ? 'Default Unit Teams' : 'Multiple Teams') 
+      matchData = {
+        ...matchData,
+        team_set_id: teamSetId,
+        home_team: minigameEventName.trim() || 'Mini-Games & Relays',
+        away_team: selectedSet ? selectedSet.name : (teamSetId === 'base' ? 'Default Unit Teams' : 'Multiple Teams')
       };
      } else if (matchType === 'bracket') {
       if (!home || !away || !roundName) return;
@@ -715,13 +718,25 @@ function ScheduleEditor({
               </label>
             </>
           ) : matchType === 'minigame' ? (
-            <label className="block sm:col-span-2">
-              <span className="mb-1 block text-xs font-semibold uppercase text-indigo-500">Select Daily Team Set</span>
-              <select value={teamSetId} onChange={(e) => setTeamSetId(e.target.value)} className="w-full rounded-md border border-indigo-300 px-3 py-2 text-sm bg-indigo-50 font-semibold text-indigo-900 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                <option value="base">🏆 Default Unit Teams</option>
-                {teamSets.map((ts) => <option key={ts.id} value={ts.id}>{ts.name} ({ts.teams.length} teams)</option>)}
-              </select>
-            </label>
+            <>
+              <label className="block sm:col-span-2">
+                <span className="mb-1 block text-xs font-semibold uppercase text-indigo-500">Event Title</span>
+                <input
+                  type="text"
+                  value={minigameEventName}
+                  onChange={(e) => setMinigameEventName(e.target.value)}
+                  placeholder="e.g. Sack Race, Shuttle Relay, Tug of War"
+                  className="w-full rounded-md border border-indigo-300 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </label>
+              <label className="block sm:col-span-2">
+                <span className="mb-1 block text-xs font-semibold uppercase text-indigo-500">Select Daily Team Set</span>
+                <select value={teamSetId} onChange={(e) => setTeamSetId(e.target.value)} className="w-full rounded-md border border-indigo-300 px-3 py-2 text-sm bg-indigo-50 font-semibold text-indigo-900 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                  <option value="base">🏆 Default Unit Teams</option>
+                  {teamSets.map((ts) => <option key={ts.id} value={ts.id}>{ts.name} ({ts.teams.length} teams)</option>)}
+                </select>
+              </label>
+            </>
           ) : matchType === 'solo' ? (
             <label className="block sm:col-span-2">
               <span className="mb-1 block text-xs font-semibold uppercase text-purple-500">Event Name</span>
@@ -851,7 +866,7 @@ function ScheduleEditor({
                   {m.match_type === 'minigame' ? (
                     <div className="flex items-center gap-1.5 text-indigo-700">
                       <Users className="w-4 h-4" />
-                      <span>Mini-Games / Relays <span className="text-slate-500 font-normal">({m.away_team})</span></span>
+                      <span>{m.home_team || 'Mini-Games & Relays'} <span className="text-slate-500 font-normal">({m.away_team})</span></span>
                     </div>
                   ) : m.match_type === 'solo' ? (
                     <div className="flex items-center gap-1.5 text-purple-700">

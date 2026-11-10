@@ -132,13 +132,16 @@ export default function ScheduleStandings({
                 return (
                   <div key={m.id} className="sched-row">
                     <div className="sched-meta" style={{ textAlign: 'left', flex: '0 0 auto' }}>{m.time} • {m.location}</div>
-                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', flex: 1, justifyContent: 'center' }}>
-                      {displayTeams?.map(t => (
-                        <span key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700, fontSize: '10pt' }}>
-                          <img src={getLogoUrl(t.name)} onError={e => e.currentTarget.style.display = 'none'} className="sched-logo" alt="" /> {t.name}
-                        </span>
-                      ))}
-                      {!displayTeams && <span>Mini-Games</span>}
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flex: 1 }}>
+                      <span style={{ fontWeight: 900, fontSize: '10pt' }}>{m.home_team || 'Mini-Games & Relays'}</span>
+                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+                        {displayTeams?.map(t => (
+                          <span key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700, fontSize: '10pt' }}>
+                            <img src={getLogoUrl(t.name)} onError={e => e.currentTarget.style.display = 'none'} className="sched-logo" alt="" /> {t.name}
+                          </span>
+                        ))}
+                        {!displayTeams && <span>Mini-Games</span>}
+                      </div>
                     </div>
                   </div>
                 );
@@ -503,7 +506,7 @@ function MatchCard({ match, unit, isAdmin, getLogoUrl, onUpdateScore, onAwardTea
       <div className={`rounded-xl border bg-white p-4 shadow-sm transition-all ${match.completed ? 'border-emerald-300 bg-emerald-50/20' : 'border-indigo-300 ring-2 ring-indigo-50'}`}>
         <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-slate-100 pb-3 text-xs text-slate-500">
           <span className="flex items-center gap-1.5 font-black text-indigo-700 uppercase tracking-wider bg-indigo-50 px-2 py-1 rounded">
-            <Users className="h-4 w-4" /> Mini-Games & Relays
+            <Users className="h-4 w-4" /> {match.home_team || 'Mini-Games & Relays'}
           </span>
           <span className="flex items-center gap-1 font-semibold text-slate-600"><CalendarDays className="h-3.5 w-3.5" /> {match.date_str}</span>
           <span className="flex items-center gap-1 font-semibold text-slate-600"><Clock className="h-3.5 w-3.5" /> {match.time}</span>
