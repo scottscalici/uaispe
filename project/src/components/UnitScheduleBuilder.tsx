@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Plus, Trash2, BookOpen, CalendarPlus, Save, Swords, Users, Trophy, Pencil, X, Wand2, User, Link as LinkIcon, Unlink, CalendarDays, ListTree, GitMerge } from 'lucide-react';
 import type { SyllabusData, ScheduleData, Match, CalendarDay, MatchType, TeamSet, Unit, Player, Team, UnitData, DailyTeamSnapshot, MinigameTeamGroup } from '../types';
+import { soloWinnerCounts } from '../standings';
 import TeamCreator from './TeamCreator';
 
 interface Props {
@@ -409,15 +410,20 @@ function ActivityLog({ unit, schedule, allUnits, calendar, dailyTeams }: any) {
                         );
                       }
                       if (m.match_type === 'solo') {
-                        const soloRosterNames = dayUnit.baseTeams.flatMap((t: Team) => t.players)
-                          .filter((p) => (m.winner_player_ids || []).includes(p.id))
-                          .map((p) => p.name);
+                        const flatPlayers = dayUnit.baseTeams.flatMap((t: Team) => t.players);
+                        const soloRosterLabels = Object.entries(soloWinnerCounts(m))
+                          .filter(([, count]) => count > 0)
+                          .map(([id, count]) => {
+                            const name = flatPlayers.find((p: Player) => p.id === id)?.name;
+                            return name ? (count > 1 ? `${name} ×${count}` : name) : null;
+                          })
+                          .filter(Boolean);
                         return (
                           <div key={m.id} className="flex flex-wrap items-center gap-2 rounded-md bg-purple-50/50 border border-purple-100 px-2.5 py-1.5 text-xs">
                             <span className="flex items-center gap-1 font-bold text-purple-700"><User className="h-3 w-3" /> {m.home_team || 'Individual Event'}</span>
                             <span className="text-slate-500">{m.time} - {m.location}</span>
-                            {soloRosterNames.length > 0 ? (
-                              <span className="flex items-center gap-1 font-semibold text-slate-700"><Trophy className="h-3 w-3 text-amber-500" /> {soloRosterNames.join(' & ')}</span>
+                            {soloRosterLabels.length > 0 ? (
+                              <span className="flex items-center gap-1 font-semibold text-slate-700"><Trophy className="h-3 w-3 text-amber-500" /> {soloRosterLabels.join(' & ')}</span>
                             ) : (
                               <span className="italic text-slate-400">Winner pending</span>
                             )}
@@ -646,7 +652,6 @@ function ScheduleEditor({
         home_score: null,
         away_score: null,
         completed: false,
-        ...(matchType === 'solo' ? { winner_player_ids: [] } : {}),
       });
     }
     // Date deliberately stays put after adding - scheduling several events on the same day is
@@ -973,7 +978,10 @@ function ScheduleEditor({
                       <span>
                         {m.home_team || 'Individual Event'}
                         <span className="text-slate-500 font-normal">
-                          {' '}— {(m.winner_player_ids?.length ?? 0) > 0 ? `${m.winner_player_ids!.length} winner(s) picked` : 'Winner pending'}
+                          {' '}— {(() => {
+                            const total = Object.values(soloWinnerCounts(m)).reduce((s, c) => s + c, 0);
+                            return total > 0 ? `${total} win${total === 1 ? '' : 's'} recorded` : 'Winner pending';
+                          })()}
                         </span>
                       </span>
                     </div>

@@ -148,11 +148,18 @@ export interface Match {
    *  event - real, recomputable ground truth (like a score is for a standard match),
    *  not a bare counter. */
   awardedTeamCounts?: Record<number, number>;
-  /** Solo events only: the student(s) credited with the win (e.g. last-one-standing
-   *  dodgeball, or several students tying for first) - picked from the Scores tab once
-   *  the event is finished, not required when the event is first scheduled. Empty/missing
-   *  means not decided yet. Not tied to any team, so it's unaffected by roster changes.
-   *  home_team doubles as a free-text event label here (e.g. "Game 1", "Round 2"). */
+  /** Solo events only: how many times each student has won within this one event - real,
+   *  recomputable ground truth, same spirit as awardedTeamCounts. Lets one event represent
+   *  several repeated rounds (e.g. Sally wins round 1 and 3, Luke wins round 2) instead of a
+   *  separate match per round. Picked incrementally from the Scores tab as rounds finish, not
+   *  required when the event is first scheduled. Empty/missing means not decided yet. Not tied
+   *  to any team, so it's unaffected by roster changes. home_team doubles as a free-text event
+   *  label here (e.g. "Game 1", "Round 2"). */
+  winnerCounts?: Record<string, number>;
+  /** @deprecated Superseded by winnerCounts (each id here counts as exactly one win) - kept
+   *  only so events created before winnerCounts existed still read correctly; never written
+   *  to by new code. Use the soloWinnerCounts() helper in standings.ts rather than reading
+   *  either field directly. */
   winner_player_ids?: string[];
   /** Merged matches only: the constituent team ids combining to form each side - each of
    *  these teams gets the match's full score and a win/loss/tie credited to its own

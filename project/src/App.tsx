@@ -557,21 +557,26 @@ export default function App() {
     }
   }));
 
-  // A solo event is "completed" exactly when at least one winner has been picked - no
-  // separate complete/reopen toggle needed, same spirit as a standard match completing
-  // once both scores are entered.
-  const handleToggleSoloWinner = (matchId: number, playerId: string) => updateActiveUnit((u) => ({
-    ...u,
-    schedule: {
-      ...u.schedule,
-      matches: u.schedule.matches.map((m) => {
-        if (m.id !== matchId) return m;
-        const current = m.winner_player_ids || [];
-        const nextIds = current.includes(playerId) ? current.filter((id) => id !== playerId) : [...current, playerId];
-        return { ...m, winner_player_ids: nextIds, completed: nextIds.length > 0 };
-      })
-    }
-  }));
+  // A solo event is "completed" exactly when at least one player has at least one win counted -
+  // no separate complete/reopen toggle needed, same spirit as a standard match completing once
+  // both scores are entered. Counts (not a one-time toggle) so one event can represent several
+  // repeated rounds, e.g. Sally wins round 1 and 3, Luke wins round 2.
+  const awardSoloWinDelta = (matchId: number, playerId: string, delta: 1 | -1) => updateActiveUnit((u) => {
+    const match = u.schedule.matches.find(m => m.id === matchId);
+    if (!match) return u;
+    if (delta === -1 && (match.winnerCounts?.[playerId] || 0) <= 0) return u;
+
+    const matches = u.schedule.matches.map((m) => {
+      if (m.id !== matchId) return m;
+      const nextCounts = { ...(m.winnerCounts || {}) };
+      nextCounts[playerId] = Math.max(0, (nextCounts[playerId] || 0) + delta);
+      const completed = Object.values(nextCounts).some((c) => c > 0);
+      return { ...m, winnerCounts: nextCounts, completed };
+    });
+    return { ...u, schedule: { ...u.schedule, matches } };
+  });
+  const handleAwardSoloWin = (matchId: number, playerId: string) => awardSoloWinDelta(matchId, playerId, 1);
+  const handleUnawardSoloWin = (matchId: number, playerId: string) => awardSoloWinDelta(matchId, playerId, -1);
 
   const handleUpdateGradebookLog = (dateStr: string, playerId: string, log: DailyLog) => updateClass((c) => {
     const nextGradebook = { ...(c.gradebook || {}) };
@@ -851,7 +856,7 @@ export default function App() {
                   onPreviewStudentView={() => { setPreviewFromAdmin(true); setRoute('student'); setPublicView('dashboard'); }} 
                 />
               )
-              : adminView === 'schedule' ? <ScheduleStandings key={`sched-${unit.unit_id}`} unit={unit} schedule={schedule} roster={roster} isAdmin={true} onUpdateScore={handleUpdateScore} onAwardTeamWin={handleAwardTeamWin} onUnawardTeamWin={handleUnawardTeamWin} onToggleMatchComplete={handleToggleMatchComplete} onToggleSoloWinner={handleToggleSoloWinner} onArchiveGroup={handleArchiveTeamSet} onUnarchiveGroup={handleUnarchiveTeamSet} />
+              : adminView === 'schedule' ? <ScheduleStandings key={`sched-${unit.unit_id}`} unit={unit} schedule={schedule} roster={roster} isAdmin={true} onUpdateScore={handleUpdateScore} onAwardTeamWin={handleAwardTeamWin} onUnawardTeamWin={handleUnawardTeamWin} onToggleMatchComplete={handleToggleMatchComplete} onAwardSoloWin={handleAwardSoloWin} onUnawardSoloWin={handleUnawardSoloWin} onArchiveGroup={handleArchiveTeamSet} onUnarchiveGroup={handleUnarchiveTeamSet} />
               : adminView === 'attendance' ? (
                   <div className="space-y-4">
                     <div className="flex gap-2">
