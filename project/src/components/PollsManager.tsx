@@ -1,7 +1,7 @@
-import { useState } from 'react';
-import { BarChart3, Plus, Trash2, ChevronDown, ChevronUp, Link2, Check } from 'lucide-react';
-import type { Poll, PollQuestion } from '../types';
-import { effectiveTotalVotes } from '../firestore';
+import { useEffect, useState } from 'react';
+import { BarChart3, Plus, Trash2, ChevronDown, ChevronUp, Link2, Check, ListOrdered, BarChart } from 'lucide-react';
+import type { Poll, PollQuestion, PollVoteRecord } from '../types';
+import { effectiveTotalVotes, subscribeToPollVotes } from '../firestore';
 
 interface Props {
   polls: Poll[];
@@ -25,6 +25,15 @@ export default function PollsManager({ polls, onCreatePoll }: Props) {
   const [questions, setQuestions] = useState<DraftQuestion[]>([emptyQuestion()]);
   const [expandedId, setExpandedId] = useState<string | null>(polls[0]?.id || null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [showResponses, setShowResponses] = useState(false);
+  const [voteRecords, setVoteRecords] = useState<PollVoteRecord[]>([]);
+
+  // Individual responses are only fetched for whichever poll is both expanded and on the
+  // Responses tab - no need to keep a listener open for every poll at once.
+  useEffect(() => {
+    if (!expandedId || !showResponses) { setVoteRecords([]); return; }
+    return subscribeToPollVotes(expandedId, setVoteRecords);
+  }, [expandedId, showResponses]);
 
   const updateQuestionText = (qi: number, value: string) => {
     setQuestions((prev) => prev.map((q, i) => (i === qi ? { ...q, question: value } : q)));
@@ -160,7 +169,7 @@ export default function PollsManager({ polls, onCreatePoll }: Props) {
           return (
             <div key={poll.id} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
               <button
-                onClick={() => setExpandedId(expanded ? null : poll.id)}
+                onClick={() => { setExpandedId(expanded ? null : poll.id); setShowResponses(false); }}
                 className="w-full flex items-center justify-between gap-3 p-4 text-left hover:bg-slate-50 transition"
               >
                 <div>
@@ -181,7 +190,24 @@ export default function PollsManager({ polls, onCreatePoll }: Props) {
 
               {expanded && (
                 <div className="border-t border-slate-100 p-4 space-y-5">
-                  {poll.questions.map((q) => {
+                  <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-1 w-fit">
+                    <button
+                      onClick={() => setShowResponses(false)}
+                      className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition-all ${!showResponses ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                      <BarChart className="h-3.5 w-3.5" /> Tally
+                    </button>
+                    <button
+                      onClick={() => setShowResponses(true)}
+                      className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-bold transition-all ${showResponses ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                      <ListOrdered className="h-3.5 w-3.5" /> Individual Responses
+                    </button>
+                  </div>
+
+                  {showResponses ? (
+                    <PollResponsesTable poll={poll} votes={voteRecords} />
+                  ) : poll.questions.map((q) => {
                     const maxVotes = Math.max(1, ...q.options.map((o) => o.votes));
                     return (
                       <div key={q.id} className="space-y-2">
@@ -221,6 +247,62 @@ export default function PollsManager({ polls, onCreatePoll }: Props) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/** One row per submission, every question's picked answer shown together, earliest first -
+ *  so e.g. "Team 1 picked the Pistons" reads as one row instead of two separate tallies, and
+ *  when two submissions pick the same option on a question, scanning top-to-bottom shows
+ *  which one got there first. A later repeat of an option already seen on that question gets
+ *  a small "already picked" flag - respondents are anonymous, so that's as specific as it can
+ *  get, but the row order above it already shows who came first. */
+function PollResponsesTable({ poll, votes }: { poll: Poll; votes: PollVoteRecord[] }) {
+  if (votes.length === 0) {
+    return <p className="text-sm text-slate-400 italic">No responses yet.</p>;
+  }
+
+  const seenPerQuestion: Record<string, Set<string>> = {};
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-left text-sm">
+        <thead className="text-xs font-bold uppercase text-slate-400">
+          <tr>
+            <th className="px-2 py-1.5 whitespace-nowrap">#</th>
+            {poll.questions.map((q) => (
+              <th key={q.id} className="px-2 py-1.5">{q.question}</th>
+            ))}
+            <th className="px-2 py-1.5 whitespace-nowrap">Submitted</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {votes.map((v, i) => (
+            <tr key={v.voterToken}>
+              <td className="px-2 py-2 text-slate-400 font-semibold">{i + 1}</td>
+              {poll.questions.map((q) => {
+                const optionId = v.answers.find((a) => a.questionId === q.id)?.optionId;
+                const option = q.options.find((o) => o.id === optionId);
+                if (!option) return <td key={q.id} className="px-2 py-2 text-slate-300 italic">—</td>;
+                seenPerQuestion[q.id] = seenPerQuestion[q.id] || new Set();
+                const isRepeat = seenPerQuestion[q.id].has(option.id);
+                seenPerQuestion[q.id].add(option.id);
+                return (
+                  <td key={q.id} className="px-2 py-2 font-semibold text-slate-700">
+                    {option.text}
+                    {isRepeat && (
+                      <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700" title="Another earlier submission also picked this">
+                        already picked
+                      </span>
+                    )}
+                  </td>
+                );
+              })}
+              <td className="px-2 py-2 whitespace-nowrap text-xs text-slate-400">{new Date(v.timestamp).toLocaleString()}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

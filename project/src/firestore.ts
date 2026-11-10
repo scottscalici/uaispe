@@ -4,9 +4,12 @@ import {
   setDoc,
   onSnapshot,
   runTransaction,
+  collection,
+  query,
+  where,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import type { ClassData, WorkoutLibrary, SchoolSettings, Poll, QuartersConfig } from './types';
+import type { ClassData, WorkoutLibrary, SchoolSettings, Poll, PollVoteRecord, QuartersConfig } from './types';
 import { initialClasses } from './data';
 import { seedExercises, seedWorkouts } from './workoutSeedData';
 import { centralDb } from './firebase';
@@ -289,6 +292,19 @@ export async function submitPollVote(
     tx.update(pollsRef, { polls });
 
     return 'ok';
+  });
+}
+
+/** Every individual submission for one poll, each with its full set of answers exactly as
+ *  given together in one visit, sorted earliest-first - lets the admin see which answers
+ *  belong to the same respondent, and (by their order here) who submitted a conflicting
+ *  pick first. Written on every vote already; this is the first thing that reads it back. */
+export function subscribeToPollVotes(pollId: string, onUpdate: (votes: PollVoteRecord[]) => void): () => void {
+  const q = query(collection(db, POLL_VOTES_COLLECTION), where('pollId', '==', pollId));
+  return onSnapshot(q, (snap) => {
+    const votes = snap.docs.map((d) => d.data() as PollVoteRecord);
+    votes.sort((a, b) => a.timestamp - b.timestamp);
+    onUpdate(votes);
   });
 }
 

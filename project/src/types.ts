@@ -360,3 +360,13 @@ export interface Poll {
    *  question and summing those would count that single vote several times over. */
   totalVotes?: number;
 }
+
+/** One submission's full set of answers, exactly as given together in one visit - lets the
+ *  admin see e.g. "the submission that picked Team 1 also picked the Pistons", and (sorted by
+ *  timestamp) which of two conflicting picks came in first. Written on every vote; only read
+ *  back by the admin's Polls tab when it shows individual responses instead of the tally. */
+export interface PollVoteRecord {
+  voterToken: string;
+  answers: { questionId: string; optionId: string }[];
+  timestamp: number;
+}
