@@ -407,30 +407,52 @@ export default function App() {
     unit: { ...u.unit, archivedTeamSetIds: (u.unit.archivedTeamSetIds || []).filter(id => id !== groupId) }
   }));
 
-  const handleRenameTeam = (teamId: number, newName: string) => updateActiveUnit((u) => ({ ...u, unit: { ...u.unit, baseTeams: u.unit.baseTeams.map((t) => t.id === teamId ? { ...t, name: newName } : t) } }));
-  const handleSwap = (p1Id: string, t1Id: number, p2Id: string, t2Id: number) => updateActiveUnit((u) => {
-    const teams = u.unit.baseTeams.map((t) => ({ ...t, players: [...t.players] }));
-    const t1 = teams.find((t) => t.id === t1Id); const t2 = teams.find((t) => t.id === t2Id);
-    if (!t1 || !t2) return u;
-    const i1 = t1.players.findIndex((p) => p.id === p1Id); const i2 = t2.players.findIndex((p) => p.id === p2Id);
-    if (i1 === -1 || i2 === -1) return u;
-    const tmp = t1.players[i1]; t1.players[i1] = t2.players[i2]; t2.players[i2] = tmp;
-    return { ...u, unit: { ...u.unit, baseTeams: teams } };
+  // Every master-team edit (rename, swap, move, add) targets whichever set it's actually for -
+  // the default base teams, or a specific named team set - instead of always silently falling
+  // back to base teams regardless of which one is open in the editor.
+  const updateTeamSetTeams = (teamSetId: string, updater: (teams: Team[]) => Team[]) => updateActiveUnit((u) => {
+    if (!teamSetId || teamSetId === 'base') {
+      return { ...u, unit: { ...u.unit, baseTeams: updater(u.unit.baseTeams) } };
+    }
+    const teamSets = (u.unit.teamSets || []).map((ts) => ts.id === teamSetId ? { ...ts, teams: updater(ts.teams) } : ts);
+    return { ...u, unit: { ...u.unit, teamSets } };
   });
-  const handleMovePlayer = (playerId: string, _fromTeamId: number, toTeamId: number) => updateActiveUnit((u) => {
-    let movedPlayer: Player | null = null;
-    const teams = u.unit.baseTeams.map((t) => {
-      const idx = t.players.findIndex((p) => p.id === playerId);
-      if (idx !== -1) { movedPlayer = t.players[idx]; return { ...t, players: t.players.filter((p) => p.id !== playerId) }; }
-      return t;
+
+  const handleRenameTeam = (teamId: number, newName: string, teamSetId: string = 'base') =>
+    updateTeamSetTeams(teamSetId, (teams) => teams.map((t) => t.id === teamId ? { ...t, name: newName } : t));
+
+  const handleSwap = (p1Id: string, t1Id: number, p2Id: string, t2Id: number, teamSetId: string = 'base') =>
+    updateTeamSetTeams(teamSetId, (teams) => {
+      const next = teams.map((t) => ({ ...t, players: [...t.players] }));
+      const t1 = next.find((t) => t.id === t1Id); const t2 = next.find((t) => t.id === t2Id);
+      if (!t1 || !t2) return teams;
+      const i1 = t1.players.findIndex((p) => p.id === p1Id); const i2 = t2.players.findIndex((p) => p.id === p2Id);
+      if (i1 === -1 || i2 === -1) return teams;
+      const tmp = t1.players[i1]; t1.players[i1] = t2.players[i2]; t2.players[i2] = tmp;
+      return next;
     });
-    // Not currently on any team (e.g. a bench player, back from injury) - add them fresh instead of no-op'ing.
-    if (!movedPlayer) movedPlayer = roster.find((p) => p.id === playerId) || null;
-    if (!movedPlayer) return u;
-    const target = teams.find((t) => t.id === toTeamId);
-    if (target) target.players = [...target.players, movedPlayer];
-    return { ...u, unit: { ...u.unit, baseTeams: teams } };
-  });
+
+  const handleMovePlayer = (playerId: string, _fromTeamId: number, toTeamId: number, teamSetId: string = 'base') =>
+    updateTeamSetTeams(teamSetId, (teams) => {
+      let movedPlayer: Player | null = null;
+      const next = teams.map((t) => {
+        const idx = t.players.findIndex((p) => p.id === playerId);
+        if (idx !== -1) { movedPlayer = t.players[idx]; return { ...t, players: t.players.filter((p) => p.id !== playerId) }; }
+        return t;
+      });
+      // Not currently on any team (e.g. a bench player, back from injury) - add them fresh instead of no-op'ing.
+      if (!movedPlayer) movedPlayer = roster.find((p) => p.id === playerId) || null;
+      if (!movedPlayer) return teams;
+      const target = next.find((t) => t.id === toTeamId);
+      if (target) target.players = [...target.players, movedPlayer];
+      return next;
+    });
+
+  const handleAddTeam = (teamSetId: string = 'base') =>
+    updateTeamSetTeams(teamSetId, (teams) => {
+      const nextId = teams.length > 0 ? Math.max(...teams.map((t) => t.id)) + 1 : 1;
+      return [...teams, { id: nextId, name: `Team ${nextId}`, league: 'Standard', players: [] }];
+    });
 
   // GAME DAY / DAILY TEAMS HANDLERS
   const handleInitDailyTeams = (dateStr: string, sourceId: string) => updateClass(c => {
@@ -850,10 +872,11 @@ export default function App() {
                   onSwapDaily={(p1, t1, p2, t2) => handleDailySwap(attendanceDate, p1, t1, p2, t2)}
                   onMoveDaily={(p, f, t) => handleDailyMove(attendanceDate, p, f, t)}
                   onRenameDaily={(t, name) => handleDailyRename(attendanceDate, t, name)}
-                  onSwapMaster={handleSwap} 
-                  onMoveMaster={handleMovePlayer} 
-                  onRenameMaster={handleRenameTeam} 
-                  onPreviewStudentView={() => { setPreviewFromAdmin(true); setRoute('student'); setPublicView('dashboard'); }} 
+                  onSwapMaster={handleSwap}
+                  onMoveMaster={handleMovePlayer}
+                  onRenameMaster={handleRenameTeam}
+                  onAddMasterTeam={handleAddTeam}
+                  onPreviewStudentView={() => { setPreviewFromAdmin(true); setRoute('student'); setPublicView('dashboard'); }}
                 />
               )
               : adminView === 'schedule' ? <ScheduleStandings key={`sched-${unit.unit_id}`} unit={unit} schedule={schedule} roster={roster} isAdmin={true} onUpdateScore={handleUpdateScore} onAwardTeamWin={handleAwardTeamWin} onUnawardTeamWin={handleUnawardTeamWin} onToggleMatchComplete={handleToggleMatchComplete} onAwardSoloWin={handleAwardSoloWin} onUnawardSoloWin={handleUnawardSoloWin} onArchiveGroup={handleArchiveTeamSet} onUnarchiveGroup={handleUnarchiveTeamSet} />

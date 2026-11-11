@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Shield, ArrowRightLeft, Pencil, Check, Printer, Eye, EyeOff, Wand2, CalendarDays, RefreshCw, XCircle, Users } from 'lucide-react';
+import { Shield, ArrowRightLeft, Pencil, Check, Printer, Eye, EyeOff, Wand2, CalendarDays, RefreshCw, XCircle, Users, Plus } from 'lucide-react';
 import type { Unit, AttendanceMap, DailyTeamSnapshot, Player, Team } from '../types';
 
 const HIDE_SKILL_KEY = 'pe_hide_skill_values';
@@ -19,9 +19,10 @@ interface Props {
   onMoveDaily: (playerId: string, fromTeamId: number, toTeamId: number) => void;
   onRenameDaily: (teamId: number, newName: string) => void;
 
-  onSwapMaster: (p1Id: string, t1Id: number, p2Id: string, t2Id: number) => void;
-  onMoveMaster: (playerId: string, fromTeamId: number, toTeamId: number) => void;
-  onRenameMaster: (teamId: number, newName: string) => void;
+  onSwapMaster: (p1Id: string, t1Id: number, p2Id: string, t2Id: number, teamSetId: string) => void;
+  onMoveMaster: (playerId: string, fromTeamId: number, toTeamId: number, teamSetId: string) => void;
+  onRenameMaster: (teamId: number, newName: string, teamSetId: string) => void;
+  onAddMasterTeam: (teamSetId: string) => void;
 
   onPreviewStudentView?: () => void;
 }
@@ -29,7 +30,7 @@ interface Props {
 export default function TeamManager({
   unit, roster, isAdmin, dateStr, classId, dailyTeams, attendance,
   onInitDaily, onClearDaily, onSwapDaily, onMoveDaily, onRenameDaily,
-  onSwapMaster, onMoveMaster, onRenameMaster, onPreviewStudentView
+  onSwapMaster, onMoveMaster, onRenameMaster, onAddMasterTeam, onPreviewStudentView
 }: Props) {
   const [viewMode, setViewMode] = useState<'daily' | 'master'>('daily');
   const [masterSetId, setMasterSetId] = useState<string>('base');
@@ -138,7 +139,7 @@ export default function TeamManager({
       setSelectedPlayer(null);
     } else {
       if (viewMode === 'daily') onSwapDaily(selectedPlayer.id, selectedPlayer.teamId, playerId, teamId);
-      else onSwapMaster(selectedPlayer.id, selectedPlayer.teamId, playerId, teamId);
+      else onSwapMaster(selectedPlayer.id, selectedPlayer.teamId, playerId, teamId, masterSetId);
       setSelectedPlayer(null);
     }
   };
@@ -146,7 +147,7 @@ export default function TeamManager({
   const handleSaveName = (teamId: number) => {
     if (editName.trim()) {
       if (viewMode === 'daily') onRenameDaily(teamId, editName.trim());
-      else onRenameMaster(teamId, editName.trim());
+      else onRenameMaster(teamId, editName.trim(), masterSetId);
     }
     setEditingTeamId(null);
   };
@@ -245,6 +246,11 @@ export default function TeamManager({
               <XCircle className="h-4 w-4" /> Reset Today
             </button>
           )}
+          {isAdmin && viewMode === 'master' && (
+            <button onClick={() => onAddMasterTeam(masterSetId)} className="flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-bold text-white shadow-sm hover:bg-indigo-700 transition no-print">
+              <Plus className="h-4 w-4" /> Add Team
+            </button>
+          )}
           {isAdmin && onPreviewStudentView && (
             <button onClick={onPreviewStudentView} className="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-200 transition" title="Preview the student-facing view">
               <Eye className="h-4 w-4" /> Display Mode
@@ -318,7 +324,7 @@ export default function TeamManager({
                   onChange={(e) => {
                     if (!e.target.value) return;
                     if (viewMode === 'daily') onMoveDaily(p.id, -1, Number(e.target.value));
-                    else onMoveMaster(p.id, -1, Number(e.target.value));
+                    else onMoveMaster(p.id, -1, Number(e.target.value), masterSetId);
                   }}
                   className="text-xs border rounded bg-slate-50 outline-none text-slate-600"
                 >
@@ -411,7 +417,7 @@ export default function TeamManager({
                               onClick={(e) => e.stopPropagation()}
                               onChange={(e) => {
                                 if (viewMode === 'daily') onMoveDaily(p.id, team.id, Number(e.target.value));
-                                else onMoveMaster(p.id, team.id, Number(e.target.value));
+                                else onMoveMaster(p.id, team.id, Number(e.target.value), masterSetId);
                               }}
                               className="text-xs border rounded bg-slate-50 outline-none text-slate-600 w-14"
                             >
