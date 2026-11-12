@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, X, Clock, Ghost, UserX, BadgeCheck, HeartPulse, Frown, BatteryLow, RotateCcw, List, LayoutGrid, Eraser, StickyNote } from 'lucide-react';
+import { Check, X, Clock, Ghost, UserX, BadgeCheck, HeartPulse, Frown, BatteryLow, PlusCircle, RotateCcw, List, LayoutGrid, Eraser, StickyNote } from 'lucide-react';
 import type { Player, Unit, DailyLogMap, QuarterHistoryMap, FloorGrid, ScoreType } from '../types';
 import { emptyLog, IB_LEARNER_TRAITS } from '../grading';
 
@@ -54,6 +54,11 @@ export default function AttendanceTracker({ roster, logs, floorGrid, classMeetsT
     const warnings = current.warnings.includes(fallbackReason) ? current.warnings : [...current.warnings, fallbackReason];
     onUpdateLog(playerId, { ...current, bonusPoints: (current.bonusPoints || 0) - 1, warnings });
     setTraitPicker({ playerId, selected: [] });
+  };
+
+  const handleBonus = (playerId: string) => {
+    const current = logs[playerId] || emptyLog('present');
+    onUpdateLog(playerId, { ...current, bonusPoints: (current.bonusPoints || 0) + 1 });
   };
 
   const handleResetDeduction = (playerId: string) => {
@@ -133,9 +138,13 @@ export default function AttendanceTracker({ roster, logs, floorGrid, classMeetsT
           {isInjured && (
             <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">Injured</span>
           )}
-          {bonus < 0 && (
-            <button onClick={() => handleResetDeduction(player.id)} title="Tap to clear deduction" className="flex shrink-0 items-center gap-0.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700 hover:bg-red-200">
-              {bonus} pts{log?.warnings.length ? ` (${log.warnings.join(', ')})` : ''} <RotateCcw className="h-2.5 w-2.5" />
+          {bonus !== 0 && (
+            <button
+              onClick={() => handleResetDeduction(player.id)}
+              title={bonus > 0 ? 'Tap to clear bonus' : 'Tap to clear deduction'}
+              className={`flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${bonus > 0 ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-red-100 text-red-700 hover:bg-red-200'}`}
+            >
+              {bonus > 0 ? `+${bonus}` : bonus} pts{log?.warnings.length ? ` (${log.warnings.join(', ')})` : ''} <RotateCcw className="h-2.5 w-2.5" />
             </button>
           )}
           {log?.note && (
@@ -166,6 +175,9 @@ export default function AttendanceTracker({ roster, logs, floorGrid, classMeetsT
           </button>
           {canDeduct && (
             <>
+              <button onClick={() => handleBonus(player.id)} className="rounded p-1.5 bg-slate-100 text-slate-400 hover:bg-emerald-100 hover:text-emerald-600 transition-colors" title="Add 1 bonus point">
+                <PlusCircle className="h-4 w-4" />
+              </button>
               <button onClick={() => handleDeduct(player.id, 'Principled')} className="rounded p-1.5 bg-slate-100 text-slate-400 hover:bg-red-100 hover:text-red-600 transition-colors" title="Deduct 1 point - Disrespect">
                 <Frown className="h-4 w-4" />
               </button>
