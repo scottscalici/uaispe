@@ -240,6 +240,17 @@ export default function TeamCreator({ roster, unit, onGenerate, onDeleteTeamSet 
     setPreview((prev) => prev ? prev.map(t => t.id === teamId ? { ...t, name: newName } : t) : null);
   };
 
+  // Adds a brand new, empty team to whatever's currently in the preview - a freshly generated
+  // set, or an existing saved set/Default Unit Teams loaded back in via its pencil-edit button -
+  // so a team can be added without regenerating or losing the rest of the set.
+  const handleAddPreviewTeam = () => {
+    setPreview((prev) => {
+      if (!prev) return prev;
+      const nextId = prev.length > 0 ? Math.max(...prev.map(t => t.id)) + 1 : 1;
+      return [...prev, { id: nextId, name: `Team ${nextId}`, league: 'Standard', players: [] }];
+    });
+  };
+
   const handleSaveDefault = () => {
     if (preview) {
       onGenerate(preview);
@@ -437,6 +448,12 @@ export default function TeamCreator({ roster, unit, onGenerate, onDeleteTeamSet 
                 className="flex items-center justify-center gap-2 rounded-lg bg-slate-100 px-4 py-2 text-sm font-bold text-slate-600 transition hover:bg-slate-200 shadow-sm"
               >
                 {hideSkill ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />} {hideSkill ? 'Stats Hidden' : 'Hide Stats'}
+              </button>
+              <button
+                onClick={handleAddPreviewTeam}
+                className="flex items-center justify-center gap-2 rounded-lg bg-blue-100 px-4 py-2 text-sm font-bold text-blue-700 transition hover:bg-blue-200 shadow-sm"
+              >
+                <Plus className="h-4 w-4" /> Add Team
               </button>
               <button
                 onClick={handleSaveDefault}
