@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Search, Calendar, MapPin, Trophy, Users, ShieldAlert, History, User } from 'lucide-react';
 import type { Unit, ScheduleData, Match } from '../types';
-import { resolveMatchGroupId, resolveMergedSideTeams } from '../standings';
+import { resolveMatchGroupId, resolveMergedSideTeams, soloWinnerCounts } from '../standings';
 
 interface Props {
   unit: Unit;
@@ -33,9 +33,9 @@ export default function PublicDashboard({ unit, schedule }: Props) {
   const soloRanked = useMemo(() => {
     const counts: Record<string, { name: string; wins: number }> = {};
     soloMatches.forEach(m => {
-      (m.winner_player_ids || []).forEach(id => {
+      Object.entries(soloWinnerCounts(m)).forEach(([id, c]) => {
         if (!counts[id]) counts[id] = { name: flatRoster.find(p => p.id === id)?.name ?? 'Unknown', wins: 0 };
-        counts[id].wins += 1;
+        counts[id].wins += c;
       });
     });
     return Object.values(counts).sort((a, b) => b.wins - a.wins);
@@ -97,7 +97,7 @@ export default function PublicDashboard({ unit, schedule }: Props) {
 
     sortedAllMatches.forEach(m => {
       if (m.match_type === 'solo') {
-        if ((m.winner_player_ids || []).includes(foundPlayer!.id)) {
+        if ((soloWinnerCounts(m)[foundPlayer!.id] || 0) > 0) {
           playerTimeline.push({ match: m, playingAs: m.home_team || 'Individual Event' });
         }
         return;
@@ -417,7 +417,13 @@ export default function PublicDashboard({ unit, schedule }: Props) {
                   }
 
                   if (m.match_type === 'solo') {
-                    const winnerNames = (m.winner_player_ids || []).map(id => flatRoster.find(p => p.id === id)?.name).filter(Boolean);
+                    const winnerNames = Object.entries(soloWinnerCounts(m))
+                      .filter(([, count]) => count > 0)
+                      .map(([id, count]) => {
+                        const name = flatRoster.find(p => p.id === id)?.name;
+                        return name ? (count > 1 ? `${name} ×${count}` : name) : null;
+                      })
+                      .filter(Boolean);
                     return (
                       <div key={m.id} className="flex flex-wrap items-center justify-between gap-3 bg-purple-50/30 border border-purple-200 p-3 rounded-lg shadow-sm">
                         <div className="flex items-center gap-2 text-xs font-semibold text-slate-500">

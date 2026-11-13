@@ -10,21 +10,13 @@ interface Props {
   onSave: (calendar: CalendarDay[]) => void;
 }
 
-type CycleFilter = 'A' | 'B' | 'All';
-
 export default function MasterCalendarBuilder({ calendar, classId, workoutLibrary, onSave }: Props) {
   const [localData, setLocalData] = useState<CalendarDay[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  
-  // Initialize filter based on classId, but allow manual changes
-  const [cycleFilter, setCycleFilter] = useState<CycleFilter>(
-    classId.includes('A') ? 'A' : classId.includes('B') ? 'B' : 'All'
-  );
 
-  useEffect(() => {
-    // Reset the toggle if they navigate to a completely different class
-    setCycleFilter(classId.includes('A') ? 'A' : classId.includes('B') ? 'B' : 'All');
-  }, [classId]);
+  // Each class only ever meets on one cycle (e.g. "3A" is the A-Day section) - locked
+  // permanently off the class itself so editing one cycle's days never mixes in the other's.
+  const cycleFilter = classId.includes('A') ? 'A' : classId.includes('B') ? 'B' : 'All';
 
   useEffect(() => {
     async function loadMasterCalendar() {
@@ -110,24 +102,7 @@ export default function MasterCalendarBuilder({ calendar, classId, workoutLibrar
         </h2>
         
         <div className="flex items-center gap-4">
-          {/* A / B / All Toggle */}
-          <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
-            {(['All', 'A', 'B'] as CycleFilter[]).map((cycle) => (
-              <button
-                key={cycle}
-                onClick={() => setCycleFilter(cycle)}
-                className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${
-                  cycleFilter === cycle 
-                    ? 'bg-white text-blue-700 shadow-sm' 
-                    : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                {cycle === 'All' ? 'All Days' : `${cycle} Days`}
-              </button>
-            ))}
-          </div>
-
-          <button 
+          <button
             onClick={() => onSave(localData)} 
             className="flex items-center gap-2 bg-emerald-600 text-white px-5 py-2 rounded-lg font-bold hover:bg-emerald-700 transition shadow-sm"
           >

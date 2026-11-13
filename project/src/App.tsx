@@ -1,17 +1,17 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Shield, Eye, Users, CalendarDays, LogIn, LogOut, BookOpen, LayoutDashboard,
-  ClipboardCheck, Star, ClipboardList, Grid3x3, Trophy, School, Loader2, CloudOff, Cloud, Activity, Plus, Lock, ListTodo, FileSpreadsheet, BarChart3
+  ClipboardCheck, Star, ClipboardList, Grid3x3, Trophy, School, Loader2, CloudOff, Cloud, Activity, Plus, Lock, ListTodo, FileSpreadsheet, BarChart3, GraduationCap
 } from 'lucide-react';
 import type {
   ClassData, Unit, ScheduleData, SyllabusData, DailyLogMap, DailyLog, ScoreType,
   QuarterHistoryMap, AttendanceMap, Player, Team, Match, UnitData, DailyTeamSnapshot,
-  WorkoutLibrary, Exercise, Workout, SchoolSettings, Poll
+  WorkoutLibrary, Exercise, Workout, SchoolSettings, Poll, Quarter
 } from './types';
 import { initialClasses } from './data';
 import { seedExercises, seedWorkouts } from './workoutSeedData';
 import { emptyLog } from './grading';
-import { loadAppMeta, ensureInitialData, subscribeToClasses, saveClass, subscribeToWorkoutLibrary, saveWorkoutLibrary, subscribeToSchoolSettings, saveSchoolSettings, subscribeToPolls, savePolls } from './firestore';
+import { loadAppMeta, ensureInitialData, subscribeToClasses, saveClass, subscribeToWorkoutLibrary, saveWorkoutLibrary, subscribeToSchoolSettings, saveSchoolSettings, subscribeToPolls, savePolls, subscribeToQuarters, saveQuarters } from './firestore';
 import TeamManager from './components/TeamManager';
 import ScheduleStandings from './components/ScheduleStandings';
 import UnitSyllabus from './components/UnitSyllabus';
@@ -29,8 +29,9 @@ import WeatherWidget, { WeatherHeaderBadge } from './components/WeatherWidget';
 import VotePage from './components/VotePage';
 import PollVotePage from './components/PollVotePage';
 import PollsManager from './components/PollsManager';
+import GradeExport from './components/GradeExport';
 
-type AdminView = 'teams' | 'schedule' | 'attendance' | 'roster' | 'calendar' | 'builder' | 'leaderboards' | 'polls';
+type AdminView = 'teams' | 'schedule' | 'attendance' | 'roster' | 'calendar' | 'builder' | 'leaderboards' | 'polls' | 'grades';
 type PublicView = 'syllabus' | 'dashboard' | 'leaderboards' | 'workout';
 
 const allPlayerIds = (c: ClassData): string[] => c.roster?.map((p) => p.id) || [];
@@ -92,6 +93,10 @@ export default function App() {
   const [polls, setPolls] = useState<Poll[]>([]);
   const skipNextPollsSave = useRef(true);
   const pollsSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [quarters, setQuarters] = useState<Quarter[]>([]);
+  const skipNextQuartersSave = useRef(true);
+  const quartersSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const activeClass = classes.find((c) => c.id === activeClassId) || classes[0];
 
@@ -297,6 +302,22 @@ export default function App() {
 
   const handleCreatePoll = (poll: Poll) => setPolls((prev) => [poll, ...prev]);
 
+  useEffect(() => {
+    const unsubscribe = subscribeToQuarters((config) => {
+      skipNextQuartersSave.current = true;
+      setQuarters(config.quarters);
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    if (skipNextQuartersSave.current) { skipNextQuartersSave.current = false; return; }
+    if (quartersSaveTimer.current) clearTimeout(quartersSaveTimer.current);
+    quartersSaveTimer.current = setTimeout(async () => {
+      try { await saveQuarters({ quarters }); } catch (err) {}
+    }, 800);
+  }, [quarters]);
+
   const handleSaveSchoolSettings = (settings: SchoolSettings) => {
     setSchoolSettings(settings);
     void saveSchoolSettings(settings);
@@ -386,28 +407,52 @@ export default function App() {
     unit: { ...u.unit, archivedTeamSetIds: (u.unit.archivedTeamSetIds || []).filter(id => id !== groupId) }
   }));
 
-  const handleRenameTeam = (teamId: number, newName: string) => updateActiveUnit((u) => ({ ...u, unit: { ...u.unit, baseTeams: u.unit.baseTeams.map((t) => t.id === teamId ? { ...t, name: newName } : t) } }));
-  const handleSwap = (p1Id: string, t1Id: number, p2Id: string, t2Id: number) => updateActiveUnit((u) => {
-    const teams = u.unit.baseTeams.map((t) => ({ ...t, players: [...t.players] }));
-    const t1 = teams.find((t) => t.id === t1Id); const t2 = teams.find((t) => t.id === t2Id);
-    if (!t1 || !t2) return u;
-    const i1 = t1.players.findIndex((p) => p.id === p1Id); const i2 = t2.players.findIndex((p) => p.id === p2Id);
-    if (i1 === -1 || i2 === -1) return u;
-    const tmp = t1.players[i1]; t1.players[i1] = t2.players[i2]; t2.players[i2] = tmp;
-    return { ...u, unit: { ...u.unit, baseTeams: teams } };
+  // Every master-team edit (rename, swap, move, add) targets whichever set it's actually for -
+  // the default base teams, or a specific named team set - instead of always silently falling
+  // back to base teams regardless of which one is open in the editor.
+  const updateTeamSetTeams = (teamSetId: string, updater: (teams: Team[]) => Team[]) => updateActiveUnit((u) => {
+    if (!teamSetId || teamSetId === 'base') {
+      return { ...u, unit: { ...u.unit, baseTeams: updater(u.unit.baseTeams) } };
+    }
+    const teamSets = (u.unit.teamSets || []).map((ts) => ts.id === teamSetId ? { ...ts, teams: updater(ts.teams) } : ts);
+    return { ...u, unit: { ...u.unit, teamSets } };
   });
-  const handleMovePlayer = (playerId: string, _fromTeamId: number, toTeamId: number) => updateActiveUnit((u) => {
-    let movedPlayer: Player | null = null;
-    const teams = u.unit.baseTeams.map((t) => {
-      const idx = t.players.findIndex((p) => p.id === playerId);
-      if (idx !== -1) { movedPlayer = t.players[idx]; return { ...t, players: t.players.filter((p) => p.id !== playerId) }; }
-      return t;
+
+  const handleRenameTeam = (teamId: number, newName: string, teamSetId: string = 'base') =>
+    updateTeamSetTeams(teamSetId, (teams) => teams.map((t) => t.id === teamId ? { ...t, name: newName } : t));
+
+  const handleSwap = (p1Id: string, t1Id: number, p2Id: string, t2Id: number, teamSetId: string = 'base') =>
+    updateTeamSetTeams(teamSetId, (teams) => {
+      const next = teams.map((t) => ({ ...t, players: [...t.players] }));
+      const t1 = next.find((t) => t.id === t1Id); const t2 = next.find((t) => t.id === t2Id);
+      if (!t1 || !t2) return teams;
+      const i1 = t1.players.findIndex((p) => p.id === p1Id); const i2 = t2.players.findIndex((p) => p.id === p2Id);
+      if (i1 === -1 || i2 === -1) return teams;
+      const tmp = t1.players[i1]; t1.players[i1] = t2.players[i2]; t2.players[i2] = tmp;
+      return next;
     });
-    if (!movedPlayer) return u;
-    const target = teams.find((t) => t.id === toTeamId);
-    if (target) target.players = [...target.players, movedPlayer];
-    return { ...u, unit: { ...u.unit, baseTeams: teams } };
-  });
+
+  const handleMovePlayer = (playerId: string, _fromTeamId: number, toTeamId: number, teamSetId: string = 'base') =>
+    updateTeamSetTeams(teamSetId, (teams) => {
+      let movedPlayer: Player | null = null;
+      const next = teams.map((t) => {
+        const idx = t.players.findIndex((p) => p.id === playerId);
+        if (idx !== -1) { movedPlayer = t.players[idx]; return { ...t, players: t.players.filter((p) => p.id !== playerId) }; }
+        return t;
+      });
+      // Not currently on any team (e.g. a bench player, back from injury) - add them fresh instead of no-op'ing.
+      if (!movedPlayer) movedPlayer = roster.find((p) => p.id === playerId) || null;
+      if (!movedPlayer) return teams;
+      const target = next.find((t) => t.id === toTeamId);
+      if (target) target.players = [...target.players, movedPlayer];
+      return next;
+    });
+
+  const handleAddTeam = (teamSetId: string = 'base') =>
+    updateTeamSetTeams(teamSetId, (teams) => {
+      const nextId = teams.length > 0 ? Math.max(...teams.map((t) => t.id)) + 1 : 1;
+      return [...teams, { id: nextId, name: `Team ${nextId}`, league: 'Standard', players: [] }];
+    });
 
   // GAME DAY / DAILY TEAMS HANDLERS
   const handleInitDailyTeams = (dateStr: string, sourceId: string) => updateClass(c => {
@@ -467,6 +512,8 @@ export default function App() {
       if (idx !== -1) { movedPlayer = t.players[idx]; return { ...t, players: t.players.filter((p) => p.id !== playerId) }; }
       return t;
     });
+    // Not currently on any team today (e.g. a bench player, back from injury) - add them fresh instead of no-op'ing.
+    if (!movedPlayer) movedPlayer = c.roster.find((p) => p.id === playerId) || null;
     if (!movedPlayer) return c;
     const target = teams.find((t) => t.id === toTeamId);
     if (target) target.players = [...target.players, movedPlayer];
@@ -532,21 +579,26 @@ export default function App() {
     }
   }));
 
-  // A solo event is "completed" exactly when at least one winner has been picked - no
-  // separate complete/reopen toggle needed, same spirit as a standard match completing
-  // once both scores are entered.
-  const handleToggleSoloWinner = (matchId: number, playerId: string) => updateActiveUnit((u) => ({
-    ...u,
-    schedule: {
-      ...u.schedule,
-      matches: u.schedule.matches.map((m) => {
-        if (m.id !== matchId) return m;
-        const current = m.winner_player_ids || [];
-        const nextIds = current.includes(playerId) ? current.filter((id) => id !== playerId) : [...current, playerId];
-        return { ...m, winner_player_ids: nextIds, completed: nextIds.length > 0 };
-      })
-    }
-  }));
+  // A solo event is "completed" exactly when at least one player has at least one win counted -
+  // no separate complete/reopen toggle needed, same spirit as a standard match completing once
+  // both scores are entered. Counts (not a one-time toggle) so one event can represent several
+  // repeated rounds, e.g. Sally wins round 1 and 3, Luke wins round 2.
+  const awardSoloWinDelta = (matchId: number, playerId: string, delta: 1 | -1) => updateActiveUnit((u) => {
+    const match = u.schedule.matches.find(m => m.id === matchId);
+    if (!match) return u;
+    if (delta === -1 && (match.winnerCounts?.[playerId] || 0) <= 0) return u;
+
+    const matches = u.schedule.matches.map((m) => {
+      if (m.id !== matchId) return m;
+      const nextCounts = { ...(m.winnerCounts || {}) };
+      nextCounts[playerId] = Math.max(0, (nextCounts[playerId] || 0) + delta);
+      const completed = Object.values(nextCounts).some((c) => c > 0);
+      return { ...m, winnerCounts: nextCounts, completed };
+    });
+    return { ...u, schedule: { ...u.schedule, matches } };
+  });
+  const handleAwardSoloWin = (matchId: number, playerId: string) => awardSoloWinDelta(matchId, playerId, 1);
+  const handleUnawardSoloWin = (matchId: number, playerId: string) => awardSoloWinDelta(matchId, playerId, -1);
 
   const handleUpdateGradebookLog = (dateStr: string, playerId: string, log: DailyLog) => updateClass((c) => {
     const nextGradebook = { ...(c.gradebook || {}) };
@@ -575,6 +627,18 @@ export default function App() {
   const handleClearAllGradebook = (dateStr: string) => updateClass((c) => {
     const nextGradebook = { ...(c.gradebook || {}) };
     nextGradebook[dateStr] = {};
+    return { ...c, gradebook: nextGradebook };
+  });
+
+  // Quick fill for missing gradebook days before an export - every (date, player) pair gets
+  // full credit in one batched update, rather than one write per slot.
+  const handleFillGradebookGaps = (fills: { date: string; playerId: string }[]) => updateClass((c) => {
+    const nextGradebook = { ...(c.gradebook || {}) };
+    fills.forEach(({ date, playerId }) => {
+      const dateLogs = { ...(nextGradebook[date] || {}) };
+      if (!dateLogs[playerId]) dateLogs[playerId] = emptyLog('present');
+      nextGradebook[date] = dateLogs;
+    });
     return { ...c, gradebook: nextGradebook };
   });
 
@@ -750,6 +814,7 @@ export default function App() {
               <NavButton active={adminView === 'calendar'} onClick={() => setAdminView('calendar')} icon={<CalendarDays className="h-4 w-4" />}>Calendar</NavButton>
               <NavButton active={adminView === 'leaderboards'} onClick={() => setAdminView('leaderboards')} icon={<Star className="h-4 w-4" />}>Leaderboards</NavButton>
               <NavButton active={adminView === 'polls'} onClick={() => setAdminView('polls')} icon={<BarChart3 className="h-4 w-4" />}>Polls</NavButton>
+              <NavButton active={adminView === 'grades'} onClick={() => setAdminView('grades')} icon={<GraduationCap className="h-4 w-4" />}>Grades</NavButton>
             </nav>
           ) : (
             <nav className="flex flex-wrap items-center gap-2">
@@ -793,9 +858,10 @@ export default function App() {
           {route === 'admin' ? (
             <>
               {adminView === 'teams' ? (
-                <TeamManager 
-                  key={`teams-${unit.unit_id}-${attendanceDate}`} 
+                <TeamManager
+                  key={`teams-${unit.unit_id}-${attendanceDate}`}
                   unit={unit}
+                  roster={roster}
                   isAdmin={true}
                   dateStr={attendanceDate}
                   classId={activeClassId}
@@ -806,13 +872,14 @@ export default function App() {
                   onSwapDaily={(p1, t1, p2, t2) => handleDailySwap(attendanceDate, p1, t1, p2, t2)}
                   onMoveDaily={(p, f, t) => handleDailyMove(attendanceDate, p, f, t)}
                   onRenameDaily={(t, name) => handleDailyRename(attendanceDate, t, name)}
-                  onSwapMaster={handleSwap} 
-                  onMoveMaster={handleMovePlayer} 
-                  onRenameMaster={handleRenameTeam} 
-                  onPreviewStudentView={() => { setPreviewFromAdmin(true); setRoute('student'); setPublicView('dashboard'); }} 
+                  onSwapMaster={handleSwap}
+                  onMoveMaster={handleMovePlayer}
+                  onRenameMaster={handleRenameTeam}
+                  onAddMasterTeam={handleAddTeam}
+                  onPreviewStudentView={() => { setPreviewFromAdmin(true); setRoute('student'); setPublicView('dashboard'); }}
                 />
               )
-              : adminView === 'schedule' ? <ScheduleStandings key={`sched-${unit.unit_id}`} unit={unit} schedule={schedule} roster={roster} isAdmin={true} onUpdateScore={handleUpdateScore} onAwardTeamWin={handleAwardTeamWin} onUnawardTeamWin={handleUnawardTeamWin} onToggleMatchComplete={handleToggleMatchComplete} onToggleSoloWinner={handleToggleSoloWinner} onArchiveGroup={handleArchiveTeamSet} onUnarchiveGroup={handleUnarchiveTeamSet} />
+              : adminView === 'schedule' ? <ScheduleStandings key={`sched-${unit.unit_id}`} unit={unit} schedule={schedule} roster={roster} isAdmin={true} onUpdateScore={handleUpdateScore} onAwardTeamWin={handleAwardTeamWin} onUnawardTeamWin={handleUnawardTeamWin} onToggleMatchComplete={handleToggleMatchComplete} onAwardSoloWin={handleAwardSoloWin} onUnawardSoloWin={handleUnawardSoloWin} onArchiveGroup={handleArchiveTeamSet} onUnarchiveGroup={handleUnarchiveTeamSet} />
               : adminView === 'attendance' ? (
                   <div className="space-y-4">
                     <div className="flex gap-2">
@@ -891,7 +958,7 @@ export default function App() {
                     {calendarSubTab === 'calendar' ? (
                       <MasterCalendarBuilder key={`cal-${activeClassId}`} calendar={activeClass.masterCalendar || []} classId={activeClassId} workoutLibrary={workoutLibrary} onSave={(cal) => updateClass(c => ({ ...c, masterCalendar: cal }))} />
                     ) : calendarSubTab === 'planner' ? (
-                      <DailyPlanner key={`plan-${activeClassId}`} calendar={activeClass.masterCalendar || []} units={activeClass.units || []} workoutLibrary={workoutLibrary} onUpdateCalendarDay={(dateStr, updates) => updateClass(c => ({ ...c, masterCalendar: (c.masterCalendar || []).map(day => day.fecha === dateStr ? { ...day, ...updates } : day) }))} onAssignWorkout={handleAssignWorkout} />
+                      <DailyPlanner key={`plan-${activeClassId}`} calendar={activeClass.masterCalendar || []} units={activeClass.units || []} classId={activeClassId} workoutLibrary={workoutLibrary} onUpdateCalendarDay={(dateStr, updates) => updateClass(c => ({ ...c, masterCalendar: (c.masterCalendar || []).map(day => day.fecha === dateStr ? { ...day, ...updates } : day) }))} onAssignWorkout={handleAssignWorkout} />
                     ) : calendarSubTab === 'workouts' ? (
                       <WorkoutBuilder library={workoutLibrary} onSaveExercise={handleSaveExercise} onDeleteExercise={handleDeleteExercise} onSaveWorkout={handleSaveWorkout} onDeleteWorkout={handleDeleteWorkout} />
                     ) : (
@@ -910,6 +977,7 @@ export default function App() {
                 />
               )
               : adminView === 'polls' ? <PollsManager polls={polls} onCreatePoll={handleCreatePoll} />
+              : adminView === 'grades' ? <GradeExport quarters={quarters} onSaveQuarters={setQuarters} roster={roster} gradebook={gradebook} classId={activeClassId} masterCalendar={activeClass.masterCalendar || []} onFillGaps={handleFillGradebookGaps} />
               : <UnitScheduleBuilder key={`builder-${unit.unit_id}`} unitName={unit.unit_name} onUpdateUnitName={handleUpdateUnitName} syllabus={syllabus} schedule={schedule} teamNames={teamNames} teamSets={unit.teamSets} calendar={activeClass.masterCalendar || []} roster={roster} unit={unit} allUnits={activeClass.units} dailyTeams={activeClass.dailyTeams || {}} onUpdateSyllabus={handleUpdateSyllabus} onAddMatch={handleAddMatch} onUpdateMatch={handleUpdateMatch} onDeleteMatch={handleDeleteMatch} onGenerateTeams={handleGenerateTeams} onMovePlayer={handleMovePlayer} onDeleteTeamSet={handleDeleteTeamSet} onSetParentSportType={handleSetParentSportType} />}
 
               {adminView === 'builder' && (
@@ -932,9 +1000,9 @@ export default function App() {
                 classId={activeClassId}
                 workoutLibrary={workoutLibrary}
                 onNavigateToUnit={(unitId) => {
-                  setStudentUnitId(unitId); 
+                  setStudentUnitId(unitId);
                   setPublicView('dashboard');
-                }} 
+                }}
               />
           ) : publicView === 'syllabus' ? <UnitSyllabus key={`syl-${unit.unit_id}`} syllabus={syllabus} unitName={unit.unit_name} />
             : <PublicDashboard key={`pub-${unit.unit_id}`} unit={unit} schedule={schedule} />

@@ -88,8 +88,12 @@ export default function TeamCreator({ roster, unit, onGenerate, onDeleteTeamSet 
   const [selectedPlayer, setSelectedPlayer] = useState<{ id: string; teamId: number } | null>(null);
   const [newSetName, setNewSetName] = useState('');
 
+  // Defaults to hidden - only an explicit prior choice to show it is remembered.
   const [hideSkill, setHideSkill] = useState(() => {
-    try { return localStorage.getItem(HIDE_SKILL_KEY) === '1'; } catch { return false; }
+    try {
+      const stored = localStorage.getItem(HIDE_SKILL_KEY);
+      return stored === null ? true : stored === '1';
+    } catch { return true; }
   });
   const toggleHideSkill = () => setHideSkill((prev) => {
     const next = !prev;
@@ -238,6 +242,17 @@ export default function TeamCreator({ roster, unit, onGenerate, onDeleteTeamSet 
   // Helper to rename individual generated teams in the preview
   const handleRenamePreviewTeam = (teamId: number, newName: string) => {
     setPreview((prev) => prev ? prev.map(t => t.id === teamId ? { ...t, name: newName } : t) : null);
+  };
+
+  // Adds a brand new, empty team to whatever's currently in the preview - a freshly generated
+  // set, or an existing saved set/Default Unit Teams loaded back in via its pencil-edit button -
+  // so a team can be added without regenerating or losing the rest of the set.
+  const handleAddPreviewTeam = () => {
+    setPreview((prev) => {
+      if (!prev) return prev;
+      const nextId = prev.length > 0 ? Math.max(...prev.map(t => t.id)) + 1 : 1;
+      return [...prev, { id: nextId, name: `Team ${nextId}`, league: 'Standard', players: [] }];
+    });
   };
 
   const handleSaveDefault = () => {
@@ -433,10 +448,16 @@ export default function TeamCreator({ roster, unit, onGenerate, onDeleteTeamSet 
             <div className="flex flex-col sm:flex-row gap-3">
               <button
                 onClick={toggleHideSkill}
-                title={hideSkill ? 'Show skill and compete scores' : 'Hide skill and compete scores (useful when students are nearby)'}
+                title={hideSkill ? 'Show skill, grade & gender' : 'Hide skill, grade & gender (safe for students nearby)'}
                 className="flex items-center justify-center gap-2 rounded-lg bg-slate-100 px-4 py-2 text-sm font-bold text-slate-600 transition hover:bg-slate-200 shadow-sm"
               >
-                {hideSkill ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />} {hideSkill ? 'Stats Hidden' : 'Hide Stats'}
+                {hideSkill ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />} {hideSkill ? 'Show' : 'Hide'}
+              </button>
+              <button
+                onClick={handleAddPreviewTeam}
+                className="flex items-center justify-center gap-2 rounded-lg bg-blue-100 px-4 py-2 text-sm font-bold text-blue-700 transition hover:bg-blue-200 shadow-sm"
+              >
+                <Plus className="h-4 w-4" /> Add Team
               </button>
               <button
                 onClick={handleSaveDefault}
@@ -504,7 +525,7 @@ export default function TeamCreator({ roster, unit, onGenerate, onDeleteTeamSet 
                         <div className="flex items-center gap-3 shrink-0">
                           <div className="flex gap-2 text-[10px] sm:text-xs font-bold text-slate-400">
                             {!hideSkill && p.grade && <span className="text-purple-500 hidden sm:inline">{p.grade}</span>}
-                            <span className={p.gender === 'F' ? 'text-pink-500' : 'text-blue-500'}>{p.gender}</span>
+                            {!hideSkill && <span className={p.gender === 'F' ? 'text-pink-500' : 'text-blue-500'}>{p.gender}</span>}
                             {!hideSkill && <span>S:{p.skill}</span>}
                             {!hideSkill && <span className="hidden sm:inline">C:{p.compete}</span>}
                           </div>

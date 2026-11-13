@@ -12,6 +12,10 @@ export interface Player {
   availability?: 'active' | 'injured' | 'out';
   scheduledAbsences?: { id: string; date: string; reason: string }[];
   teammateVotes?: number;
+  /** Schoology's unique student ID, set once via the roster import match tool. Admin-only -
+   *  never shown in any student-facing view; the site's own shorthand display name (`name`)
+   *  never changes because of this. */
+  schoologyId?: string;
 }
 
 export interface LessonPlanItem {
@@ -144,11 +148,18 @@ export interface Match {
    *  event - real, recomputable ground truth (like a score is for a standard match),
    *  not a bare counter. */
   awardedTeamCounts?: Record<number, number>;
-  /** Solo events only: the student(s) credited with the win (e.g. last-one-standing
-   *  dodgeball, or several students tying for first) - picked from the Scores tab once
-   *  the event is finished, not required when the event is first scheduled. Empty/missing
-   *  means not decided yet. Not tied to any team, so it's unaffected by roster changes.
-   *  home_team doubles as a free-text event label here (e.g. "Game 1", "Round 2"). */
+  /** Solo events only: how many times each student has won within this one event - real,
+   *  recomputable ground truth, same spirit as awardedTeamCounts. Lets one event represent
+   *  several repeated rounds (e.g. Sally wins round 1 and 3, Luke wins round 2) instead of a
+   *  separate match per round. Picked incrementally from the Scores tab as rounds finish, not
+   *  required when the event is first scheduled. Empty/missing means not decided yet. Not tied
+   *  to any team, so it's unaffected by roster changes. home_team doubles as a free-text event
+   *  label here (e.g. "Game 1", "Round 2"). */
+  winnerCounts?: Record<string, number>;
+  /** @deprecated Superseded by winnerCounts (each id here counts as exactly one win) - kept
+   *  only so events created before winnerCounts existed still read correctly; never written
+   *  to by new code. Use the soloWinnerCounts() helper in standings.ts rather than reading
+   *  either field directly. */
   winner_player_ids?: string[];
   /** Merged matches only: the constituent team ids combining to form each side - each of
    *  these teams gets the match's full score and a win/loss/tie credited to its own
@@ -157,6 +168,18 @@ export interface Match {
    *  mashup name) and never affect which teams get credit. */
   merged_home_team_ids?: number[];
   merged_away_team_ids?: number[];
+  /** Mini-games only: optional groupings of 2+ of the event's teams into one combined side
+   *  (e.g. two small teams merged into one bigger relay team) - same spirit as a merged
+   *  standard match's constituent teams. Awarding the group a win credits every member team
+   *  id in awardedTeamCounts at once. Any team not listed in a group still shows and awards
+   *  on its own. */
+  minigameGroups?: MinigameTeamGroup[];
+}
+
+export interface MinigameTeamGroup {
+  id: string;
+  name: string;
+  teamIds: number[];
 }
 
 export interface StandingRow {
@@ -313,6 +336,20 @@ export interface SchoolSettings {
   classTime: string;
 }
 
+/** A single grading quarter - school-wide, not per-class, since both A Day and B Day
+ *  sections share the same quarter dates (they just meet a different number of times,
+ *  which the earned-over-possible math absorbs). startDate/endDate are 'YYYY-MM-DD'. */
+export interface Quarter {
+  id: string;
+  label: string;
+  startDate: string;
+  endDate: string;
+}
+
+export interface QuartersConfig {
+  quarters: Quarter[];
+}
+
 export interface PollOption {
   id: string;
   text: string;
@@ -337,4 +374,18 @@ export interface Poll {
   id: string;
   questions: PollQuestion[];
   createdAt: number;
+  /** Number of students who have submitted this poll - tracked directly rather than derived
+   *  by summing every option's votes, since one submission can touch up to one option per
+   *  question and summing those would count that single vote several times over. */
+  totalVotes?: number;
+}
+
+/** One submission's full set of answers, exactly as given together in one visit - lets the
+ *  admin see e.g. "the submission that picked Team 1 also picked the Pistons", and (sorted by
+ *  timestamp) which of two conflicting picks came in first. Written on every vote; only read
+ *  back by the admin's Polls tab when it shows individual responses instead of the tally. */
+export interface PollVoteRecord {
+  voterToken: string;
+  answers: { questionId: string; optionId: string }[];
+  timestamp: number;
 }
