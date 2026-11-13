@@ -46,6 +46,8 @@ export default function ScheduleStandings({
   }, [groups, soloMatches]);
 
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [printFrom, setPrintFrom] = useState('');
+  const [printTo, setPrintTo] = useState('');
   const activeGroupId = selectedGroupId && tabs.some(t => t.id === selectedGroupId) ? selectedGroupId : (tabs[0]?.id ?? null);
 
   const activeGroup = groups.find(g => g.id === activeGroupId);
@@ -85,6 +87,14 @@ export default function ScheduleStandings({
     return grouped;
   }, [sortedAllMatches]);
 
+  // Blank From/To means the whole unit, same as before - set either one to narrow the printed
+  // schedule to a specific day or range without touching the on-screen standings/tabs.
+  const printDates = useMemo(() => {
+    return Object.keys(matchesByDate)
+      .filter((d) => (!printFrom || d >= printFrom) && (!printTo || d <= printTo))
+      .sort();
+  }, [matchesByDate, printFrom, printTo]);
+
   const handlePrintSchedule = () => window.print();
 
   const handleArchiveClick = () => {
@@ -108,22 +118,34 @@ export default function ScheduleStandings({
           .sched-row { break-inside: avoid; page-break-inside: avoid; display: flex !important; align-items: center; justify-content: space-between; border: 1px solid #cbd5e1 !important; border-radius: 6px; padding: 8px 12px; margin-bottom: 6px; }
           .sched-team { display: flex !important; align-items: center; gap: 8px; font-weight: 700; font-size: 11pt; color: #000 !important; flex: 1; }
           .sched-team.away { justify-content: flex-end; text-align: right; }
-          .sched-logo { width: 22px !important; height: 22px !important; object-fit: contain; }
+          .sched-logo { width: 32px !important; height: 32px !important; object-fit: contain; }
           .sched-meta { font-size: 9pt; color: #334155 !important; white-space: nowrap; padding: 0 10px; text-align: center; }
           .sched-vs { font-weight: 900; font-size: 10pt; color: #64748b !important; padding: 0 10px; }
         }
       `}</style>
 
-      <div className="flex justify-end sched-no-print">
+      <div className="flex flex-wrap items-center justify-end gap-3 sched-no-print">
+        <div className="flex items-center gap-2 text-sm">
+          <label className="font-semibold text-slate-500">From</label>
+          <input type="date" value={printFrom} onChange={(e) => setPrintFrom(e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-blue-500" />
+          <label className="font-semibold text-slate-500">To</label>
+          <input type="date" value={printTo} onChange={(e) => setPrintTo(e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-blue-500" />
+          {(printFrom || printTo) && (
+            <button onClick={() => { setPrintFrom(''); setPrintTo(''); }} className="text-xs font-bold text-slate-400 hover:text-slate-600 underline">
+              Clear
+            </button>
+          )}
+        </div>
         <button onClick={handlePrintSchedule} className="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white shadow-sm hover:bg-blue-700 transition">
           <Printer className="h-4 w-4" /> Print Schedule
         </button>
       </div>
 
-      {/* Print-only clean schedule list, covers the full season chronologically */}
+      {/* Print-only clean schedule list - the full season by default, or just the From/To range
+          picked above. */}
       <div id="printable-schedule" className="hidden print:block">
         <h1 className="text-2xl font-black text-center mb-6">{unit.unit_name} — Season Schedule</h1>
-        {Object.keys(matchesByDate).sort().map(date => (
+        {printDates.map(date => (
           <div key={date} className="sched-day">
             <div className="sched-date-header">{new Date(date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</div>
             {matchesByDate[date].map(m => {
@@ -192,8 +214,10 @@ export default function ScheduleStandings({
             })}
           </div>
         ))}
-        {Object.keys(matchesByDate).length === 0 && (
-          <p className="text-center text-slate-400">No events scheduled yet.</p>
+        {printDates.length === 0 && (
+          <p className="text-center text-slate-400">
+            {Object.keys(matchesByDate).length === 0 ? 'No events scheduled yet.' : 'No events in the selected date range.'}
+          </p>
         )}
       </div>
 

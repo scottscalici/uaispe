@@ -176,18 +176,18 @@ export default function TeamManager({
           .print-title { font-size: 14pt !important; padding-bottom: 3px !important; padding-left: 16px !important; padding-right: 16px !important; }
           .print-grid {
             display: grid !important;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)) !important;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)) !important;
             justify-content: center !important;
             align-content: flex-start !important;
-            gap: 8px !important;
+            gap: 12px !important;
           }
-          .print-card { break-inside: avoid; page-break-inside: avoid; border: 1.5px solid #cbd5e1 !important; border-radius: 6px !important; background: #ffffff !important; box-shadow: none !important; max-width: 260px; margin: 0 auto; width: 100%; }
-          .print-header { background: #f1f5f9 !important; color: #0f172a !important; border-bottom: 1.5px solid #cbd5e1 !important; flex-direction: column !important; text-align: center; padding: 5px 8px !important; gap: 2px !important; }
+          .print-card { break-inside: avoid; page-break-inside: avoid; border: 1.5px solid #cbd5e1 !important; border-radius: 10px !important; background: #ffffff !important; box-shadow: none !important; max-width: 280px; margin: 0 auto; width: 100%; padding-bottom: 6px; }
+          .print-header { background: transparent !important; color: #1d4ed8 !important; border-bottom: none !important; flex-direction: column !important; text-align: center; padding: 10px 8px 6px !important; gap: 4px !important; }
           .print-header > div { flex-direction: column !important; align-items: center !important; }
-          .print-logo { width: 30px !important; height: 30px !important; margin: 0 auto; }
-          .print-text { font-size: 10.5pt !important; color: #000 !important; }
-          .print-roster-row { justify-content: center !important; padding: 1px 8px !important; }
-          .print-roster-name { font-size: 9pt !important; color: #1e293b !important; text-align: center; }
+          .print-logo { width: 48px !important; height: 48px !important; margin: 0 auto; }
+          .print-text { font-size: 12.5pt !important; color: #1d4ed8 !important; }
+          .print-roster-row { justify-content: center !important; padding: 2px 8px !important; }
+          .print-roster-name { font-size: 10pt !important; color: #1e293b !important; text-align: center; }
         }
       `}</style>
 
