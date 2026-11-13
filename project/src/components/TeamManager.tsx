@@ -40,8 +40,12 @@ export default function TeamManager({
   const [editingTeamId, setEditingTeamId] = useState<number | null>(null);
   const [editName, setEditName] = useState('');
 
+  // Defaults to hidden - only an explicit prior choice to show it is remembered.
   const [hideSkill, setHideSkill] = useState(() => {
-    try { return localStorage.getItem(HIDE_SKILL_KEY) === '1'; } catch { return false; }
+    try {
+      const stored = localStorage.getItem(HIDE_SKILL_KEY);
+      return stored === null ? true : stored === '1';
+    } catch { return true; }
   });
   const toggleHideSkill = () => setHideSkill((prev) => {
     const next = !prev;
@@ -232,13 +236,13 @@ export default function TeamManager({
         )}
         
         <div className="flex items-center gap-3">
-          {isAdmin && (
+          {isAdmin && viewMode === 'master' && (
             <button
               onClick={toggleHideSkill}
-              title={hideSkill ? 'Show skill values' : 'Hide skill values (useful when students are nearby)'}
+              title={hideSkill ? 'Show skill values' : 'Hide skill values (safe for students nearby)'}
               className="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-200 transition no-print"
             >
-              {hideSkill ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />} {hideSkill ? 'Stats Hidden' : 'Hide Stats'}
+              {hideSkill ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />} {hideSkill ? 'Show' : 'Hide'}
             </button>
           )}
           {isAdmin && viewMode === 'daily' && dailySnapshot && (
@@ -411,7 +415,10 @@ export default function TeamManager({
 
                         {isAdmin && (
                           <div className="flex items-center gap-2 no-print shrink-0">
-                            {!hideSkill && <span className="text-[10px] font-bold text-slate-400 hidden sm:inline">S:{p.skill}</span>}
+                            {/* Skill is never shown on the live daily snapshot, regardless of the
+                                Master Templates reveal toggle - this view is used on the fly with
+                                students right there. */}
+                            {viewMode === 'master' && !hideSkill && <span className="text-[10px] font-bold text-slate-400 hidden sm:inline">S:{p.skill}</span>}
                             <select
                               value=""
                               onClick={(e) => e.stopPropagation()}
