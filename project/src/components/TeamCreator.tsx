@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Wand2, Save, ArrowRightLeft, Users, Plus, Trash2, Pencil, Eye, EyeOff } from 'lucide-react';
+import { Wand2, Save, ArrowRightLeft, Users, Plus, Trash2, Pencil, Eye, EyeOff, UserMinus } from 'lucide-react';
 import type { Unit, Player, Team } from '../types';
 
 const HIDE_SKILL_KEY = 'pe_hide_skill_values';
@@ -113,6 +113,14 @@ export default function TeamCreator({ roster, unit, onGenerate, onDeleteTeamSet 
     const grades = Array.from(new Set(activePlayers.map(p => p.grade?.trim() || 'Unspecified')));
     return grades.sort();
   }, [activePlayers]);
+
+  // Active roster players not currently on any team in the preview - either sidelined on
+  // purpose (e.g. tentatively holding a kid who might not be in class) or just never placed.
+  const sidelinedPlayers = useMemo(() => {
+    if (!preview) return [];
+    const assignedIds = new Set(preview.flatMap(t => t.players.map(p => p.id)));
+    return activePlayers.filter(p => !assignedIds.has(p.id));
+  }, [preview, activePlayers]);
 
   const handleGeneratePreview = () => {
     setSelectedPlayer(null); 
@@ -237,6 +245,28 @@ export default function TeamCreator({ roster, unit, onGenerate, onDeleteTeamSet 
       return nextPreview;
     });
     setSelectedPlayer(null); 
+  };
+
+  // Pulls a player off a team into the sideline - not deleted, just unassigned in this preview,
+  // so they can sit there while deciding where (or whether) they belong, e.g. a kid who might
+  // not actually be in class today.
+  const handleSidelinePlayer = (playerId: string, fromTeamId: number) => {
+    setPreview((prev) => {
+      if (!prev) return null;
+      return prev.map(t => t.id === fromTeamId ? { ...t, players: t.players.filter(p => p.id !== playerId) } : t);
+    });
+    if (selectedPlayer?.id === playerId) setSelectedPlayer(null);
+  };
+
+  // Places a sidelined player onto a team - pulled fresh from the roster since they aren't on
+  // any team in this preview to move them from.
+  const handleAddSidelinedPlayer = (playerId: string, toTeamId: number) => {
+    setPreview((prev) => {
+      if (!prev) return null;
+      const player = activePlayers.find(p => p.id === playerId);
+      if (!player) return prev;
+      return prev.map(t => t.id === toTeamId ? { ...t, players: [...t.players, player] } : t);
+    });
   };
 
   // Helper to rename individual generated teams in the preview
@@ -564,6 +594,13 @@ export default function TeamCreator({ roster, unit, onGenerate, onDeleteTeamSet 
                               <option key={t.id} value={t.id}>{t.name}</option>
                             ))}
                           </select>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleSidelinePlayer(p.id, team.id); }}
+                            title="Sideline - take off this team without deleting them"
+                            className="rounded p-1 text-slate-400 hover:bg-amber-50 hover:text-amber-600 transition-colors"
+                          >
+                            <UserMinus className="h-3.5 w-3.5" />
+                          </button>
                         </div>
                       </div>
                     );
@@ -572,6 +609,31 @@ export default function TeamCreator({ roster, unit, onGenerate, onDeleteTeamSet 
               </div>
             ))}
           </div>
+
+          {sidelinedPlayers.length > 0 && (
+            <div className="mt-6 rounded-xl border border-dashed border-amber-300 bg-amber-50 p-4">
+              <h4 className="mb-3 flex items-center gap-2 text-sm font-bold text-amber-800">
+                <UserMinus className="h-4 w-4" /> Sideline - Not Currently on a Team ({sidelinedPlayers.length})
+              </h4>
+              <div className="flex flex-wrap gap-2">
+                {sidelinedPlayers.map(p => (
+                  <div key={p.id} className="flex items-center gap-2 rounded-lg border border-amber-200 bg-white px-3 py-1.5 shadow-sm">
+                    <span className="text-sm font-semibold text-slate-700">{p.name}</span>
+                    <select
+                      value=""
+                      onChange={(e) => { if (e.target.value) handleAddSidelinedPlayer(p.id, Number(e.target.value)); }}
+                      className="text-xs border rounded bg-slate-50 outline-none text-slate-600"
+                    >
+                      <option value="" disabled>Add to...</option>
+                      {preview.map(t => (
+                        <option key={t.id} value={t.id}>{t.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
