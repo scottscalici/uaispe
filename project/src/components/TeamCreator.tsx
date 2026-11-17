@@ -255,6 +255,21 @@ export default function TeamCreator({ roster, unit, onGenerate, onDeleteTeamSet 
     });
   };
 
+  // Removes a team from the preview - any players on it are dropped from the preview entirely
+  // (not moved anywhere), so this confirms first whenever the team isn't already empty.
+  const handleDeletePreviewTeam = (teamId: number) => {
+    setPreview((prev) => {
+      if (!prev) return prev;
+      const team = prev.find(t => t.id === teamId);
+      if (!team) return prev;
+      if (team.players.length > 0 && !confirm(`Delete "${team.name}"? Its ${team.players.length} player${team.players.length === 1 ? '' : 's'} will be removed from this preview too.`)) {
+        return prev;
+      }
+      if (selectedPlayer?.teamId === teamId) setSelectedPlayer(null);
+      return prev.filter(t => t.id !== teamId);
+    });
+  };
+
   const handleSaveDefault = () => {
     if (preview) {
       onGenerate(preview);
@@ -500,11 +515,20 @@ export default function TeamCreator({ roster, unit, onGenerate, onDeleteTeamSet 
                     />
                     <span className="text-sm font-normal text-slate-500">({team.players.length} players)</span>
                   </div>
-                  {!hideSkill && (
-                    <div className="text-xs font-bold text-slate-500 bg-white px-2 py-1 rounded border shadow-sm">
-                      Avg Skill: {avgSkill(team.players).toFixed(1)}
-                    </div>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {!hideSkill && (
+                      <div className="text-xs font-bold text-slate-500 bg-white px-2 py-1 rounded border shadow-sm">
+                        Avg Skill: {avgSkill(team.players).toFixed(1)}
+                      </div>
+                    )}
+                    <button
+                      onClick={() => handleDeletePreviewTeam(team.id)}
+                      title="Delete this team"
+                      className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
                 <div className="space-y-1">
                   {team.players.map(p => {
