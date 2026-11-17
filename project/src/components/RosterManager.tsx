@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { UserPlus, Upload, Trash2, Edit2, Check, X, Users, Grid, Lock } from 'lucide-react';
+import { UserPlus, Upload, Trash2, Edit2, Check, X, Users, Grid, Lock, FileSpreadsheet } from 'lucide-react';
 import type { Player, Unit, FloorGrid } from '../types';
 import LockerManager from './LockerManager';
+import RosterImport from './RosterImport';
 
 interface Props {
   roster: Player[];
@@ -16,10 +17,12 @@ interface Props {
 }
 
 export default function RosterManager({ roster, floorGrid, onAddPlayer, onUpdatePlayer, onDeletePlayer, onUpdateFloorGrid }: Props) {
-  const [view, setView] = useState<'roster' | 'grid' | 'locks'>('roster');
+  const [view, setView] = useState<'roster' | 'grid' | 'locks' | 'import'>('roster');
   const [newPlayerName, setNewPlayerName] = useState('');
   const [newPlayerGender, setNewPlayerGender] = useState('M');
   const [newPlayerSkill, setNewPlayerSkill] = useState(5);
+  const [newPlayerGrade, setNewPlayerGrade] = useState('');
+  const [newPlayerCompete, setNewPlayerCompete] = useState<'rec' | 'comp'>('rec');
   
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
@@ -34,9 +37,12 @@ export default function RosterManager({ roster, floorGrid, onAddPlayer, onUpdate
       name: newPlayerName.trim(),
       gender: newPlayerGender,
       skill: newPlayerSkill,
-      compete: 5
+      compete: newPlayerCompete === 'comp' ? 5 : 1,
+      grade: newPlayerGrade || undefined,
     });
     setNewPlayerName('');
+    setNewPlayerGrade('');
+    setNewPlayerCompete('rec');
   };
 
   const handleSaveEdit = (id: string) => {
@@ -95,11 +101,17 @@ export default function RosterManager({ roster, floorGrid, onAddPlayer, onUpdate
           >
             <Grid className="w-4 h-4" /> Floor Grid
           </button>
-          <button 
+          <button
             onClick={() => setView('locks')}
             className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-bold transition-all ${view === 'locks' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
           >
             <Lock className="w-4 h-4" /> Locks
+          </button>
+          <button
+            onClick={() => setView('import')}
+            className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-bold transition-all ${view === 'import' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+          >
+            <FileSpreadsheet className="w-4 h-4" /> Schoology Import
           </button>
         </div>
       </div>
@@ -129,6 +141,27 @@ export default function RosterManager({ roster, floorGrid, onAddPlayer, onUpdate
                     <input type="number" min="1" max="10" value={newPlayerSkill} onChange={e => setNewPlayerSkill(Number(e.target.value))} className="w-full border border-slate-300 rounded-lg p-2 outline-none focus:border-blue-500" />
                   </div>
                 </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Grade</label>
+                  <select value={newPlayerGrade} onChange={e => setNewPlayerGrade(e.target.value)} className="w-full border border-slate-300 rounded-lg p-2 outline-none focus:border-blue-500 bg-white">
+                    <option value="">-- Unspecified --</option>
+                    <option value="9">9</option>
+                    <option value="10">10</option>
+                    <option value="11">11</option>
+                    <option value="12">12</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">League Preference</label>
+                  <div className="flex rounded-lg border border-slate-300 overflow-hidden">
+                    <button type="button" onClick={() => setNewPlayerCompete('rec')} className={`flex-1 py-2 text-xs font-bold transition-colors ${newPlayerCompete === 'rec' ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}>
+                      Recreational
+                    </button>
+                    <button type="button" onClick={() => setNewPlayerCompete('comp')} className={`flex-1 py-2 text-xs font-bold transition-colors ${newPlayerCompete === 'comp' ? 'bg-slate-800 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}>
+                      Competitive
+                    </button>
+                  </div>
+                </div>
                 <button type="submit" disabled={!newPlayerName.trim()} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-lg transition disabled:opacity-50">
                   Add to Roster
                 </button>
@@ -143,7 +176,9 @@ export default function RosterManager({ roster, floorGrid, onAddPlayer, onUpdate
                   <tr>
                     <th className="px-4 py-3">Name</th>
                     <th className="px-4 py-3 w-20">Gender</th>
+                    <th className="px-4 py-3 w-20">Grade</th>
                     <th className="px-4 py-3 w-20">Skill</th>
+                    <th className="px-4 py-3 w-32">League</th>
                     <th className="px-4 py-3 w-28">Status</th>
                     <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
@@ -162,9 +197,26 @@ export default function RosterManager({ roster, floorGrid, onAddPlayer, onUpdate
                       </td>
                       <td className="px-4 py-2 text-slate-600">{p.gender}</td>
                       <td className="px-4 py-2">
+                        <select value={p.grade || ''} onChange={e => onUpdatePlayer(p.id, { grade: e.target.value || undefined })} className="bg-transparent border border-transparent hover:border-slate-300 rounded p-1 outline-none">
+                          <option value="">—</option>
+                          <option value="9">9</option>
+                          <option value="10">10</option>
+                          <option value="11">11</option>
+                          <option value="12">12</option>
+                        </select>
+                      </td>
+                      <td className="px-4 py-2">
                         <select value={p.skill} onChange={e => onUpdatePlayer(p.id, { skill: Number(e.target.value) })} className="bg-transparent border border-transparent hover:border-slate-300 rounded p-1 outline-none">
                           {[1,2,3,4,5,6,7,8,9,10].map(n => <option key={n} value={n}>{n}</option>)}
                         </select>
+                      </td>
+                      <td className="px-4 py-2">
+                        <button
+                          onClick={() => onUpdatePlayer(p.id, { compete: p.compete >= 4 ? 1 : 5 })}
+                          className={`rounded-full px-2.5 py-1 text-xs font-bold transition-colors ${p.compete >= 4 ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-blue-100 text-blue-700 hover:bg-blue-200'}`}
+                        >
+                          {p.compete >= 4 ? 'Competitive' : 'Recreational'}
+                        </button>
                       </td>
                       <td className="px-4 py-2">
                         <select
@@ -184,7 +236,7 @@ export default function RosterManager({ roster, floorGrid, onAddPlayer, onUpdate
                     </tr>
                   ))}
                   {roster.length === 0 && (
-                    <tr><td colSpan={5} className="text-center py-8 text-slate-400 font-medium">No students in roster.</td></tr>
+                    <tr><td colSpan={7} className="text-center py-8 text-slate-400 font-medium">No students in roster.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -243,7 +295,9 @@ export default function RosterManager({ roster, floorGrid, onAddPlayer, onUpdate
           </div>
         </div>
       ) : view === 'locks' ? (
-        <LockerManager /> 
+        <LockerManager />
+      ) : view === 'import' ? (
+        <RosterImport roster={roster} onUpdatePlayer={onUpdatePlayer} />
       ) : null}
     </div>
   );

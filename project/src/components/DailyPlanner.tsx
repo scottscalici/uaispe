@@ -5,6 +5,7 @@ import type { CalendarDay, UnitData, LessonPlanItem, LessonPlan, WorkoutLibrary 
 interface Props {
   calendar: CalendarDay[];
   units: UnitData[];
+  classId: string;
   workoutLibrary: WorkoutLibrary;
   onUpdateCalendarDay: (dateStr: string, updates: Partial<CalendarDay>) => void;
   onAssignWorkout: (dateStr: string, workoutId: string | null) => void;
@@ -18,8 +19,14 @@ const DEFAULT_TIMELINE: LessonPlanItem[] = [
   { id: '5', time: '11:50', activity: 'Cool Down & Check Out', details: 'Check posted teams for tomorrow.' }
 ];
 
-export default function DailyPlanner({ calendar, units, workoutLibrary, onUpdateCalendarDay, onAssignWorkout }: Props) {
-  const schoolDays = useMemo(() => calendar.filter(d => d.status === 'school' || d.status === 'half-day'), [calendar]);
+export default function DailyPlanner({ calendar, units, classId, workoutLibrary, onUpdateCalendarDay, onAssignWorkout }: Props) {
+  // Each class only ever meets on one cycle (e.g. "3A" is the A-Day section) - locked
+  // permanently off the class itself so planning one cycle's days never mixes in the other's.
+  const cycle = classId.includes('A') ? 'A' : classId.includes('B') ? 'B' : null;
+  const schoolDays = useMemo(
+    () => calendar.filter(d => (d.status === 'school' || d.status === 'half-day') && (!cycle || d.ciclo === cycle)),
+    [calendar, cycle],
+  );
   const [selectedDate, setSelectedDate] = useState<string>('');
 
   useEffect(() => {

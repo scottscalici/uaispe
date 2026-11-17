@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Wand2, Save, ArrowRightLeft, Users, Plus, Trash2, Pencil, Eye, EyeOff } from 'lucide-react';
+import { Wand2, Save, ArrowRightLeft, Users, Plus, Trash2, Pencil, Eye, EyeOff, UserMinus } from 'lucide-react';
 import type { Unit, Player, Team } from '../types';
 
 const HIDE_SKILL_KEY = 'pe_hide_skill_values';
@@ -88,8 +88,12 @@ export default function TeamCreator({ roster, unit, onGenerate, onDeleteTeamSet 
   const [selectedPlayer, setSelectedPlayer] = useState<{ id: string; teamId: number } | null>(null);
   const [newSetName, setNewSetName] = useState('');
 
+  // Defaults to hidden - only an explicit prior choice to show it is remembered.
   const [hideSkill, setHideSkill] = useState(() => {
-    try { return localStorage.getItem(HIDE_SKILL_KEY) === '1'; } catch { return false; }
+    try {
+      const stored = localStorage.getItem(HIDE_SKILL_KEY);
+      return stored === null ? true : stored === '1';
+    } catch { return true; }
   });
   const toggleHideSkill = () => setHideSkill((prev) => {
     const next = !prev;
@@ -109,6 +113,14 @@ export default function TeamCreator({ roster, unit, onGenerate, onDeleteTeamSet 
     const grades = Array.from(new Set(activePlayers.map(p => p.grade?.trim() || 'Unspecified')));
     return grades.sort();
   }, [activePlayers]);
+
+  // Active roster players not currently on any team in the preview - either sidelined on
+  // purpose (e.g. tentatively holding a kid who might not be in class) or just never placed.
+  const sidelinedPlayers = useMemo(() => {
+    if (!preview) return [];
+    const assignedIds = new Set(preview.flatMap(t => t.players.map(p => p.id)));
+    return activePlayers.filter(p => !assignedIds.has(p.id));
+  }, [preview, activePlayers]);
 
   const handleGeneratePreview = () => {
     setSelectedPlayer(null); 
@@ -235,9 +247,57 @@ export default function TeamCreator({ roster, unit, onGenerate, onDeleteTeamSet 
     setSelectedPlayer(null); 
   };
 
+  // Pulls a player off a team into the sideline - not deleted, just unassigned in this preview,
+  // so they can sit there while deciding where (or whether) they belong, e.g. a kid who might
+  // not actually be in class today.
+  const handleSidelinePlayer = (playerId: string, fromTeamId: number) => {
+    setPreview((prev) => {
+      if (!prev) return null;
+      return prev.map(t => t.id === fromTeamId ? { ...t, players: t.players.filter(p => p.id !== playerId) } : t);
+    });
+    if (selectedPlayer?.id === playerId) setSelectedPlayer(null);
+  };
+
+  // Places a sidelined player onto a team - pulled fresh from the roster since they aren't on
+  // any team in this preview to move them from.
+  const handleAddSidelinedPlayer = (playerId: string, toTeamId: number) => {
+    setPreview((prev) => {
+      if (!prev) return null;
+      const player = activePlayers.find(p => p.id === playerId);
+      if (!player) return prev;
+      return prev.map(t => t.id === toTeamId ? { ...t, players: [...t.players, player] } : t);
+    });
+  };
+
   // Helper to rename individual generated teams in the preview
   const handleRenamePreviewTeam = (teamId: number, newName: string) => {
     setPreview((prev) => prev ? prev.map(t => t.id === teamId ? { ...t, name: newName } : t) : null);
+  };
+
+  // Adds a brand new, empty team to whatever's currently in the preview - a freshly generated
+  // set, or an existing saved set/Default Unit Teams loaded back in via its pencil-edit button -
+  // so a team can be added without regenerating or losing the rest of the set.
+  const handleAddPreviewTeam = () => {
+    setPreview((prev) => {
+      if (!prev) return prev;
+      const nextId = prev.length > 0 ? Math.max(...prev.map(t => t.id)) + 1 : 1;
+      return [...prev, { id: nextId, name: `Team ${nextId}`, league: 'Standard', players: [] }];
+    });
+  };
+
+  // Removes a team from the preview - any players on it are dropped from the preview entirely
+  // (not moved anywhere), so this confirms first whenever the team isn't already empty.
+  const handleDeletePreviewTeam = (teamId: number) => {
+    setPreview((prev) => {
+      if (!prev) return prev;
+      const team = prev.find(t => t.id === teamId);
+      if (!team) return prev;
+      if (team.players.length > 0 && !confirm(`Delete "${team.name}"? Its ${team.players.length} player${team.players.length === 1 ? '' : 's'} will be removed from this preview too.`)) {
+        return prev;
+      }
+      if (selectedPlayer?.teamId === teamId) setSelectedPlayer(null);
+      return prev.filter(t => t.id !== teamId);
+    });
   };
 
   const handleSaveDefault = () => {
@@ -433,10 +493,16 @@ export default function TeamCreator({ roster, unit, onGenerate, onDeleteTeamSet 
             <div className="flex flex-col sm:flex-row gap-3">
               <button
                 onClick={toggleHideSkill}
-                title={hideSkill ? 'Show skill and compete scores' : 'Hide skill and compete scores (useful when students are nearby)'}
+                title={hideSkill ? 'Show skill, grade & gender' : 'Hide skill, grade & gender (safe for students nearby)'}
                 className="flex items-center justify-center gap-2 rounded-lg bg-slate-100 px-4 py-2 text-sm font-bold text-slate-600 transition hover:bg-slate-200 shadow-sm"
               >
-                {hideSkill ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />} {hideSkill ? 'Stats Hidden' : 'Hide Stats'}
+                {hideSkill ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />} {hideSkill ? 'Show' : 'Hide'}
+              </button>
+              <button
+                onClick={handleAddPreviewTeam}
+                className="flex items-center justify-center gap-2 rounded-lg bg-blue-100 px-4 py-2 text-sm font-bold text-blue-700 transition hover:bg-blue-200 shadow-sm"
+              >
+                <Plus className="h-4 w-4" /> Add Team
               </button>
               <button
                 onClick={handleSaveDefault}
@@ -479,11 +545,20 @@ export default function TeamCreator({ roster, unit, onGenerate, onDeleteTeamSet 
                     />
                     <span className="text-sm font-normal text-slate-500">({team.players.length} players)</span>
                   </div>
-                  {!hideSkill && (
-                    <div className="text-xs font-bold text-slate-500 bg-white px-2 py-1 rounded border shadow-sm">
-                      Avg Skill: {avgSkill(team.players).toFixed(1)}
-                    </div>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {!hideSkill && (
+                      <div className="text-xs font-bold text-slate-500 bg-white px-2 py-1 rounded border shadow-sm">
+                        Avg Skill: {avgSkill(team.players).toFixed(1)}
+                      </div>
+                    )}
+                    <button
+                      onClick={() => handleDeletePreviewTeam(team.id)}
+                      title="Delete this team"
+                      className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
                 <div className="space-y-1">
                   {team.players.map(p => {
@@ -504,7 +579,7 @@ export default function TeamCreator({ roster, unit, onGenerate, onDeleteTeamSet 
                         <div className="flex items-center gap-3 shrink-0">
                           <div className="flex gap-2 text-[10px] sm:text-xs font-bold text-slate-400">
                             {!hideSkill && p.grade && <span className="text-purple-500 hidden sm:inline">{p.grade}</span>}
-                            <span className={p.gender === 'F' ? 'text-pink-500' : 'text-blue-500'}>{p.gender}</span>
+                            {!hideSkill && <span className={p.gender === 'F' ? 'text-pink-500' : 'text-blue-500'}>{p.gender}</span>}
                             {!hideSkill && <span>S:{p.skill}</span>}
                             {!hideSkill && <span className="hidden sm:inline">C:{p.compete}</span>}
                           </div>
@@ -519,6 +594,13 @@ export default function TeamCreator({ roster, unit, onGenerate, onDeleteTeamSet 
                               <option key={t.id} value={t.id}>{t.name}</option>
                             ))}
                           </select>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleSidelinePlayer(p.id, team.id); }}
+                            title="Sideline - take off this team without deleting them"
+                            className="rounded p-1 text-slate-400 hover:bg-amber-50 hover:text-amber-600 transition-colors"
+                          >
+                            <UserMinus className="h-3.5 w-3.5" />
+                          </button>
                         </div>
                       </div>
                     );
@@ -527,6 +609,31 @@ export default function TeamCreator({ roster, unit, onGenerate, onDeleteTeamSet 
               </div>
             ))}
           </div>
+
+          {sidelinedPlayers.length > 0 && (
+            <div className="mt-6 rounded-xl border border-dashed border-amber-300 bg-amber-50 p-4">
+              <h4 className="mb-3 flex items-center gap-2 text-sm font-bold text-amber-800">
+                <UserMinus className="h-4 w-4" /> Sideline - Not Currently on a Team ({sidelinedPlayers.length})
+              </h4>
+              <div className="flex flex-wrap gap-2">
+                {sidelinedPlayers.map(p => (
+                  <div key={p.id} className="flex items-center gap-2 rounded-lg border border-amber-200 bg-white px-3 py-1.5 shadow-sm">
+                    <span className="text-sm font-semibold text-slate-700">{p.name}</span>
+                    <select
+                      value=""
+                      onChange={(e) => { if (e.target.value) handleAddSidelinedPlayer(p.id, Number(e.target.value)); }}
+                      className="text-xs border rounded bg-slate-50 outline-none text-slate-600"
+                    >
+                      <option value="" disabled>Add to...</option>
+                      {preview.map(t => (
+                        <option key={t.id} value={t.id}>{t.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

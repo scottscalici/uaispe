@@ -150,10 +150,21 @@ export function computeStandings(matches: Match[], unit: Unit): Standings {
   return standings;
 }
 
+/** A solo event's per-player win counts - real counts if recorded that way, or a count of 1
+ *  per id for events created before winnerCounts existed (each one meant exactly one win at
+ *  the time). Every reader of a solo event's wins should go through this rather than reading
+ *  winnerCounts or winner_player_ids directly, so old and new events stay consistent. */
+export function soloWinnerCounts(m: Match): Record<string, number> {
+  if (m.winnerCounts) return m.winnerCounts;
+  const counts: Record<string, number> = {};
+  (m.winner_player_ids || []).forEach((id) => { counts[id] = (counts[id] ?? 0) + 1; });
+  return counts;
+}
+
 /**
  * Player win counts, computed fresh every time from the schedule itself - never stored or
  * manually adjusted. A match's recorded result (a score, a mini-game's awardedTeamCounts, or a
- * solo event's winner_player_id) is the only source of truth; who gets credited for it is
+ * solo event's winnerCounts) is the only source of truth; who gets credited for it is
  * always the assigned roster - the current team-set/base-team composition a match was
  * programmed against, ignoring any same-day Game Day Snapshot substitution - solo events skip
  * team resolution entirely since they credit a student directly. Move a player off a team
@@ -165,7 +176,7 @@ export function computeWinsFromSchedule(matches: Match[], unit: Unit): Record<st
 
   matches.forEach((m) => {
     if (m.match_type === 'solo') {
-      (m.winner_player_ids || []).forEach((id) => { wins[id] = (wins[id] ?? 0) + 1; });
+      Object.entries(soloWinnerCounts(m)).forEach(([id, count]) => { wins[id] = (wins[id] ?? 0) + count; });
       return;
     }
 

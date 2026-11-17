@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Trophy, Star, ChevronDown, ChevronUp, Plus, Minus, History, CalendarDays, Link2, Check } from 'lucide-react';
 import type { Player, Unit, UnitData, TeammatePointMap, Match } from '../types';
-import { computeWinsFromSchedule, resolveMatchTeams } from '../standings';
+import { computeWinsFromSchedule, resolveMatchTeams, soloWinnerCounts } from '../standings';
 
 interface Props {
   roster: Player[];
@@ -69,8 +69,9 @@ export default function Leaderboards({
 
     matches.forEach(m => {
       if (m.match_type === 'solo') {
-        if ((m.winner_player_ids || []).includes(playerId)) {
-          entries.push({ match: m, label: m.home_team ? `Solo Event - ${m.home_team}` : 'Solo Event Win', unitName: u.unit_name });
+        const count = soloWinnerCounts(m)[playerId] || 0;
+        if (count > 0) {
+          entries.push({ match: m, label: m.home_team ? `Solo Event - ${m.home_team}` : 'Solo Event Win', count, unitName: u.unit_name });
         }
         return;
       }

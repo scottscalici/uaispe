@@ -1,11 +1,12 @@
 import { useState, useMemo } from 'react';
-import { Shield, ArrowRightLeft, Pencil, Check, Printer, Eye, EyeOff, Wand2, CalendarDays, RefreshCw, XCircle } from 'lucide-react';
+import { Shield, ArrowRightLeft, Pencil, Check, Printer, Eye, EyeOff, Wand2, CalendarDays, RefreshCw, XCircle, Users, Plus } from 'lucide-react';
 import type { Unit, AttendanceMap, DailyTeamSnapshot, Player, Team } from '../types';
 
 const HIDE_SKILL_KEY = 'pe_hide_skill_values';
 
 interface Props {
   unit: Unit;
+  roster: Player[];
   isAdmin: boolean;
   dateStr: string;
   classId: string;
@@ -18,17 +19,18 @@ interface Props {
   onMoveDaily: (playerId: string, fromTeamId: number, toTeamId: number) => void;
   onRenameDaily: (teamId: number, newName: string) => void;
 
-  onSwapMaster: (p1Id: string, t1Id: number, p2Id: string, t2Id: number) => void;
-  onMoveMaster: (playerId: string, fromTeamId: number, toTeamId: number) => void;
-  onRenameMaster: (teamId: number, newName: string) => void;
+  onSwapMaster: (p1Id: string, t1Id: number, p2Id: string, t2Id: number, teamSetId: string) => void;
+  onMoveMaster: (playerId: string, fromTeamId: number, toTeamId: number, teamSetId: string) => void;
+  onRenameMaster: (teamId: number, newName: string, teamSetId: string) => void;
+  onAddMasterTeam: (teamSetId: string) => void;
 
   onPreviewStudentView?: () => void;
 }
 
 export default function TeamManager({
-  unit, isAdmin, dateStr, classId, dailyTeams, attendance,
+  unit, roster, isAdmin, dateStr, classId, dailyTeams, attendance,
   onInitDaily, onClearDaily, onSwapDaily, onMoveDaily, onRenameDaily,
-  onSwapMaster, onMoveMaster, onRenameMaster, onPreviewStudentView
+  onSwapMaster, onMoveMaster, onRenameMaster, onAddMasterTeam, onPreviewStudentView
 }: Props) {
   const [viewMode, setViewMode] = useState<'daily' | 'master'>('daily');
   const [masterSetId, setMasterSetId] = useState<string>('base');
@@ -38,8 +40,12 @@ export default function TeamManager({
   const [editingTeamId, setEditingTeamId] = useState<number | null>(null);
   const [editName, setEditName] = useState('');
 
+  // Defaults to hidden - only an explicit prior choice to show it is remembered.
   const [hideSkill, setHideSkill] = useState(() => {
-    try { return localStorage.getItem(HIDE_SKILL_KEY) === '1'; } catch { return false; }
+    try {
+      const stored = localStorage.getItem(HIDE_SKILL_KEY);
+      return stored === null ? true : stored === '1';
+    } catch { return true; }
   });
   const toggleHideSkill = () => setHideSkill((prev) => {
     const next = !prev;
@@ -56,6 +62,15 @@ export default function TeamManager({
     if (masterSetId === 'base') activeTeams = unit.baseTeams;
     else activeTeams = unit.teamSets?.find(ts => ts.id === masterSetId)?.teams || [];
   }
+
+  // Players not on any team in the current view - e.g. someone injured when teams were first
+  // made who's since been cleared, or a newer roster addition - so they can be added without
+  // regenerating everyone else.
+  const benchPlayers = useMemo(() => {
+    if (activeTeams.length === 0) return [];
+    const assignedIds = new Set(activeTeams.flatMap((t) => t.players.map((p) => p.id)));
+    return roster.filter((p) => p.availability !== 'out' && !assignedIds.has(p.id));
+  }, [activeTeams, roster]);
 
   // --- SMART SUB AI ENGINE (GENDER AWARE + MULTI-TEAM CHECK) ---
   const aiSuggestions = useMemo(() => {
@@ -128,7 +143,7 @@ export default function TeamManager({
       setSelectedPlayer(null);
     } else {
       if (viewMode === 'daily') onSwapDaily(selectedPlayer.id, selectedPlayer.teamId, playerId, teamId);
-      else onSwapMaster(selectedPlayer.id, selectedPlayer.teamId, playerId, teamId);
+      else onSwapMaster(selectedPlayer.id, selectedPlayer.teamId, playerId, teamId, masterSetId);
       setSelectedPlayer(null);
     }
   };
@@ -136,7 +151,7 @@ export default function TeamManager({
   const handleSaveName = (teamId: number) => {
     if (editName.trim()) {
       if (viewMode === 'daily') onRenameDaily(teamId, editName.trim());
-      else onRenameMaster(teamId, editName.trim());
+      else onRenameMaster(teamId, editName.trim(), masterSetId);
     }
     setEditingTeamId(null);
   };
@@ -165,18 +180,18 @@ export default function TeamManager({
           .print-title { font-size: 14pt !important; padding-bottom: 3px !important; padding-left: 16px !important; padding-right: 16px !important; }
           .print-grid {
             display: grid !important;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)) !important;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)) !important;
             justify-content: center !important;
             align-content: flex-start !important;
-            gap: 8px !important;
+            gap: 12px !important;
           }
-          .print-card { break-inside: avoid; page-break-inside: avoid; border: 1.5px solid #cbd5e1 !important; border-radius: 6px !important; background: #ffffff !important; box-shadow: none !important; max-width: 260px; margin: 0 auto; width: 100%; }
-          .print-header { background: #f1f5f9 !important; color: #0f172a !important; border-bottom: 1.5px solid #cbd5e1 !important; flex-direction: column !important; text-align: center; padding: 5px 8px !important; gap: 2px !important; }
+          .print-card { break-inside: avoid; page-break-inside: avoid; border: 1.5px solid #cbd5e1 !important; border-radius: 10px !important; background: #ffffff !important; box-shadow: none !important; max-width: 280px; margin: 0 auto; width: 100%; padding-bottom: 6px; }
+          .print-header { background: transparent !important; color: #1d4ed8 !important; border-bottom: none !important; flex-direction: column !important; text-align: center; padding: 10px 8px 6px !important; gap: 4px !important; }
           .print-header > div { flex-direction: column !important; align-items: center !important; }
-          .print-logo { width: 30px !important; height: 30px !important; margin: 0 auto; }
-          .print-text { font-size: 10.5pt !important; color: #000 !important; }
-          .print-roster-row { justify-content: center !important; padding: 1px 8px !important; }
-          .print-roster-name { font-size: 9pt !important; color: #1e293b !important; text-align: center; }
+          .print-logo { width: 48px !important; height: 48px !important; margin: 0 auto; }
+          .print-text { font-size: 12.5pt !important; color: #1d4ed8 !important; }
+          .print-roster-row { justify-content: center !important; padding: 2px 8px !important; }
+          .print-roster-name { font-size: 10pt !important; color: #1e293b !important; text-align: center; }
         }
       `}</style>
 
@@ -221,18 +236,23 @@ export default function TeamManager({
         )}
         
         <div className="flex items-center gap-3">
-          {isAdmin && (
+          {isAdmin && viewMode === 'master' && (
             <button
               onClick={toggleHideSkill}
-              title={hideSkill ? 'Show skill values' : 'Hide skill values (useful when students are nearby)'}
+              title={hideSkill ? 'Show skill values' : 'Hide skill values (safe for students nearby)'}
               className="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-200 transition no-print"
             >
-              {hideSkill ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />} {hideSkill ? 'Stats Hidden' : 'Hide Stats'}
+              {hideSkill ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />} {hideSkill ? 'Show' : 'Hide'}
             </button>
           )}
           {isAdmin && viewMode === 'daily' && dailySnapshot && (
             <button onClick={onClearDaily} className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-600 border border-red-200 hover:bg-red-100 transition">
               <XCircle className="h-4 w-4" /> Reset Today
+            </button>
+          )}
+          {isAdmin && viewMode === 'master' && (
+            <button onClick={() => onAddMasterTeam(masterSetId)} className="flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-bold text-white shadow-sm hover:bg-indigo-700 transition no-print">
+              <Plus className="h-4 w-4" /> Add Team
             </button>
           )}
           {isAdmin && onPreviewStudentView && (
@@ -288,6 +308,39 @@ export default function TeamManager({
              ))}
            </div>
          </div>
+      )}
+
+      {/* BENCH / UNASSIGNED POOL */}
+      {isAdmin && benchPlayers.length > 0 && (
+        <div className="no-print rounded-xl border border-dashed border-amber-300 bg-amber-50 p-4">
+          <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-amber-800">
+            <Users className="h-4 w-4" /> Bench - Not Currently on a Team ({benchPlayers.length})
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {benchPlayers.map((p) => (
+              <div key={p.id} className="flex items-center gap-2 rounded-lg border border-amber-200 bg-white px-3 py-1.5 shadow-sm">
+                <span className="text-sm font-semibold text-slate-700">{p.name}</span>
+                {p.availability === 'injured' && (
+                  <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">Injured</span>
+                )}
+                <select
+                  value=""
+                  onChange={(e) => {
+                    if (!e.target.value) return;
+                    if (viewMode === 'daily') onMoveDaily(p.id, -1, Number(e.target.value));
+                    else onMoveMaster(p.id, -1, Number(e.target.value), masterSetId);
+                  }}
+                  className="text-xs border rounded bg-slate-50 outline-none text-slate-600"
+                >
+                  <option value="" disabled>Add to...</option>
+                  {activeTeams.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* Main Container marked for screen and print */}
@@ -362,13 +415,16 @@ export default function TeamManager({
 
                         {isAdmin && (
                           <div className="flex items-center gap-2 no-print shrink-0">
-                            {!hideSkill && <span className="text-[10px] font-bold text-slate-400 hidden sm:inline">S:{p.skill}</span>}
+                            {/* Skill is never shown on the live daily snapshot, regardless of the
+                                Master Templates reveal toggle - this view is used on the fly with
+                                students right there. */}
+                            {viewMode === 'master' && !hideSkill && <span className="text-[10px] font-bold text-slate-400 hidden sm:inline">S:{p.skill}</span>}
                             <select
                               value=""
                               onClick={(e) => e.stopPropagation()}
                               onChange={(e) => {
                                 if (viewMode === 'daily') onMoveDaily(p.id, team.id, Number(e.target.value));
-                                else onMoveMaster(p.id, team.id, Number(e.target.value));
+                                else onMoveMaster(p.id, team.id, Number(e.target.value), masterSetId);
                               }}
                               className="text-xs border rounded bg-slate-50 outline-none text-slate-600 w-14"
                             >

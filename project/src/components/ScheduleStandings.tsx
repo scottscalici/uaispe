@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import { CalendarDays, Clock, MapPin, BarChart3, Users, Plus, Minus, Trophy, Lock, Unlock, Printer, User } from 'lucide-react';
+import { CalendarDays, Clock, MapPin, BarChart3, Users, Plus, Minus, Trophy, Lock, Unlock, Printer, User, GitMerge } from 'lucide-react';
 import type { ScheduleData, Match, Unit, Player } from '../types';
-import { computeStandings, rankStandings, groupMatchesBySet, resolveMergedSideTeams } from '../standings';
+import { computeStandings, rankStandings, groupMatchesBySet, resolveMergedSideTeams, soloWinnerCounts } from '../standings';
 
 const SOLO_GROUP_ID = '__solo__';
 
@@ -14,14 +14,15 @@ interface Props {
   onAwardTeamWin: (matchId: number, teamId: number) => void;
   onUnawardTeamWin: (matchId: number, teamId: number) => void;
   onToggleMatchComplete: (matchId: number) => void;
-  onToggleSoloWinner: (matchId: number, playerId: string) => void;
+  onAwardSoloWin: (matchId: number, playerId: string) => void;
+  onUnawardSoloWin: (matchId: number, playerId: string) => void;
   onArchiveGroup: (groupId: string) => void;
   onUnarchiveGroup: (groupId: string) => void;
 }
 
 export default function ScheduleStandings({
   unit, schedule, roster, isAdmin,
-  onUpdateScore, onAwardTeamWin, onUnawardTeamWin, onToggleMatchComplete, onToggleSoloWinner,
+  onUpdateScore, onAwardTeamWin, onUnawardTeamWin, onToggleMatchComplete, onAwardSoloWin, onUnawardSoloWin,
   onArchiveGroup, onUnarchiveGroup,
 }: Props) {
   // NEW: Guarantee all matches are sorted perfectly by Date and Time
@@ -45,6 +46,8 @@ export default function ScheduleStandings({
   }, [groups, soloMatches]);
 
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [printFrom, setPrintFrom] = useState('');
+  const [printTo, setPrintTo] = useState('');
   const activeGroupId = selectedGroupId && tabs.some(t => t.id === selectedGroupId) ? selectedGroupId : (tabs[0]?.id ?? null);
 
   const activeGroup = groups.find(g => g.id === activeGroupId);
@@ -61,7 +64,7 @@ export default function ScheduleStandings({
   const soloRanked = useMemo(() => {
     if (!isSoloView) return [];
     const counts: Record<string, number> = {};
-    soloMatches.forEach(m => (m.winner_player_ids || []).forEach(id => { counts[id] = (counts[id] ?? 0) + 1; }));
+    soloMatches.forEach(m => Object.entries(soloWinnerCounts(m)).forEach(([id, c]) => { counts[id] = (counts[id] ?? 0) + c; }));
     return Object.entries(counts)
       .map(([playerId, wins]) => ({ playerId, name: roster.find(p => p.id === playerId)?.name ?? 'Unknown', wins }))
       .sort((a, b) => b.wins - a.wins);
@@ -83,6 +86,14 @@ export default function ScheduleStandings({
     });
     return grouped;
   }, [sortedAllMatches]);
+
+  // Blank From/To means the whole unit, same as before - set either one to narrow the printed
+  // schedule to a specific day or range without touching the on-screen standings/tabs.
+  const printDates = useMemo(() => {
+    return Object.keys(matchesByDate)
+      .filter((d) => (!printFrom || d >= printFrom) && (!printTo || d <= printTo))
+      .sort();
+  }, [matchesByDate, printFrom, printTo]);
 
   const handlePrintSchedule = () => window.print();
 
@@ -107,22 +118,34 @@ export default function ScheduleStandings({
           .sched-row { break-inside: avoid; page-break-inside: avoid; display: flex !important; align-items: center; justify-content: space-between; border: 1px solid #cbd5e1 !important; border-radius: 6px; padding: 8px 12px; margin-bottom: 6px; }
           .sched-team { display: flex !important; align-items: center; gap: 8px; font-weight: 700; font-size: 11pt; color: #000 !important; flex: 1; }
           .sched-team.away { justify-content: flex-end; text-align: right; }
-          .sched-logo { width: 22px !important; height: 22px !important; object-fit: contain; }
+          .sched-logo { width: 32px !important; height: 32px !important; object-fit: contain; }
           .sched-meta { font-size: 9pt; color: #334155 !important; white-space: nowrap; padding: 0 10px; text-align: center; }
           .sched-vs { font-weight: 900; font-size: 10pt; color: #64748b !important; padding: 0 10px; }
         }
       `}</style>
 
-      <div className="flex justify-end sched-no-print">
+      <div className="flex flex-wrap items-center justify-end gap-3 sched-no-print">
+        <div className="flex items-center gap-2 text-sm">
+          <label className="font-semibold text-slate-500">From</label>
+          <input type="date" value={printFrom} onChange={(e) => setPrintFrom(e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-blue-500" />
+          <label className="font-semibold text-slate-500">To</label>
+          <input type="date" value={printTo} onChange={(e) => setPrintTo(e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-blue-500" />
+          {(printFrom || printTo) && (
+            <button onClick={() => { setPrintFrom(''); setPrintTo(''); }} className="text-xs font-bold text-slate-400 hover:text-slate-600 underline">
+              Clear
+            </button>
+          )}
+        </div>
         <button onClick={handlePrintSchedule} className="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white shadow-sm hover:bg-blue-700 transition">
           <Printer className="h-4 w-4" /> Print Schedule
         </button>
       </div>
 
-      {/* Print-only clean schedule list, covers the full season chronologically */}
+      {/* Print-only clean schedule list - the full season by default, or just the From/To range
+          picked above. */}
       <div id="printable-schedule" className="hidden print:block">
         <h1 className="text-2xl font-black text-center mb-6">{unit.unit_name} — Season Schedule</h1>
-        {Object.keys(matchesByDate).sort().map(date => (
+        {printDates.map(date => (
           <div key={date} className="sched-day">
             <div className="sched-date-header">{new Date(date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</div>
             {matchesByDate[date].map(m => {
@@ -132,24 +155,33 @@ export default function ScheduleStandings({
                 return (
                   <div key={m.id} className="sched-row">
                     <div className="sched-meta" style={{ textAlign: 'left', flex: '0 0 auto' }}>{m.time} • {m.location}</div>
-                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', flex: 1, justifyContent: 'center' }}>
-                      {displayTeams?.map(t => (
-                        <span key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700, fontSize: '10pt' }}>
-                          <img src={getLogoUrl(t.name)} onError={e => e.currentTarget.style.display = 'none'} className="sched-logo" alt="" /> {t.name}
-                        </span>
-                      ))}
-                      {!displayTeams && <span>Mini-Games</span>}
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flex: 1 }}>
+                      <span style={{ fontWeight: 900, fontSize: '10pt' }}>{m.home_team || 'Mini-Games & Relays'}</span>
+                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+                        {displayTeams?.map(t => (
+                          <span key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700, fontSize: '10pt' }}>
+                            <img src={getLogoUrl(t.name)} onError={e => e.currentTarget.style.display = 'none'} className="sched-logo" alt="" /> {t.name}
+                          </span>
+                        ))}
+                        {!displayTeams && <span>Mini-Games</span>}
+                      </div>
                     </div>
                   </div>
                 );
               }
               if (m.match_type === 'solo') {
-                const winnerNames = (m.winner_player_ids || []).map(id => roster.find(p => p.id === id)?.name).filter(Boolean);
+                const winnerLabels = Object.entries(soloWinnerCounts(m))
+                  .filter(([, count]) => count > 0)
+                  .map(([id, count]) => {
+                    const name = roster.find(p => p.id === id)?.name;
+                    return name ? (count > 1 ? `${name} ×${count}` : name) : null;
+                  })
+                  .filter(Boolean);
                 return (
                   <div key={m.id} className="sched-row">
                     <div className="sched-meta" style={{ textAlign: 'left', flex: '0 0 auto' }}>{m.time} • {m.location}</div>
                     <div style={{ flex: 1, textAlign: 'center', fontWeight: 700, fontSize: '10pt' }}>
-                      {m.home_team || 'Individual Event'} — {winnerNames.length > 0 ? `🏆 ${winnerNames.join(' & ')}` : 'Winner pending'}
+                      {m.home_team || 'Individual Event'} — {winnerLabels.length > 0 ? `🏆 ${winnerLabels.join(' & ')}` : 'Winner pending'}
                     </div>
                   </div>
                 );
@@ -182,8 +214,10 @@ export default function ScheduleStandings({
             })}
           </div>
         ))}
-        {Object.keys(matchesByDate).length === 0 && (
-          <p className="text-center text-slate-400">No events scheduled yet.</p>
+        {printDates.length === 0 && (
+          <p className="text-center text-slate-400">
+            {Object.keys(matchesByDate).length === 0 ? 'No events scheduled yet.' : 'No events in the selected date range.'}
+          </p>
         )}
       </div>
 
@@ -243,7 +277,7 @@ export default function ScheduleStandings({
             <h3 className="mb-3 text-lg font-semibold text-slate-800">Individual Events</h3>
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               {soloMatches.map(m => (
-                <SoloMatchCard key={m.id} match={m} roster={roster} isAdmin={isAdmin} onToggleWinner={onToggleSoloWinner} />
+                <SoloMatchCard key={m.id} match={m} roster={roster} isAdmin={isAdmin} onAwardWin={onAwardSoloWin} onUnawardWin={onUnawardSoloWin} />
               ))}
               {soloMatches.length === 0 && (
                 <div className="col-span-full rounded-lg border border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
@@ -420,14 +454,21 @@ function SoloStandingsTable({ ranked }: { ranked: { playerId: string; name: stri
   );
 }
 
-function SoloMatchCard({ match, roster, isAdmin, onToggleWinner }: {
+function SoloMatchCard({ match, roster, isAdmin, onAwardWin, onUnawardWin }: {
   match: Match;
   roster: Player[];
   isAdmin: boolean;
-  onToggleWinner: (matchId: number, playerId: string) => void;
+  onAwardWin: (matchId: number, playerId: string) => void;
+  onUnawardWin: (matchId: number, playerId: string) => void;
 }) {
-  const winnerIds = match.winner_player_ids || [];
-  const winnerNames = winnerIds.map(id => roster.find(p => p.id === id)?.name).filter((n): n is string => !!n);
+  const counts = soloWinnerCounts(match);
+  const winnerLabels = Object.entries(counts)
+    .filter(([, c]) => c > 0)
+    .map(([id, c]) => {
+      const name = roster.find(p => p.id === id)?.name;
+      return name ? (c > 1 ? `${name} ×${c}` : name) : null;
+    })
+    .filter((n): n is string => !!n);
   const sortedRoster = [...roster].sort((a, b) => a.name.localeCompare(b.name));
 
   return (
@@ -446,28 +487,46 @@ function SoloMatchCard({ match, roster, isAdmin, onToggleWinner }: {
 
       {isAdmin ? (
         <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase text-purple-500">Tap winner(s):</p>
-          <div className="flex flex-wrap gap-1.5">
+          <p className="text-xs font-semibold uppercase text-purple-500">+1 Win per round - click again for a repeat winner:</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
             {sortedRoster.map((p) => {
-              const active = winnerIds.includes(p.id);
+              const count = counts[p.id] || 0;
               return (
-                <button
-                  key={p.id}
-                  onClick={() => onToggleWinner(match.id, p.id)}
-                  className={`rounded-md border px-2.5 py-1.5 text-xs font-bold transition ${active ? 'bg-purple-600 text-white border-purple-600' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'}`}
-                >
-                  {p.name}
-                </button>
+                <div key={p.id} className={`flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 ${count > 0 ? 'border-purple-300 bg-purple-50' : 'border-slate-200 bg-white'}`}>
+                  <span className="truncate text-xs font-bold text-slate-700">{p.name}</span>
+                  <div className="flex shrink-0 items-center gap-1">
+                    {count > 0 && (
+                      <span className="flex items-center gap-1 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-black text-emerald-700" title="Wins awarded">
+                        <Trophy className="h-2.5 w-2.5" /> {count}
+                      </span>
+                    )}
+                    {count > 0 && (
+                      <button
+                        onClick={() => onUnawardWin(match.id, p.id)}
+                        title="Undo one award"
+                        className="flex h-6 w-6 items-center justify-center rounded bg-slate-100 text-slate-500 hover:bg-red-100 hover:text-red-600 transition-colors"
+                      >
+                        <Minus className="h-3 w-3" />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => onAwardWin(match.id, p.id)}
+                      className="flex items-center gap-0.5 rounded bg-purple-100 px-2 py-1 text-[10px] font-black text-purple-700 hover:bg-purple-200 transition-colors"
+                    >
+                      <Plus className="h-2.5 w-2.5" /> 1 Win
+                    </button>
+                  </div>
+                </div>
               );
             })}
           </div>
         </div>
       ) : (
         <div className="flex items-center justify-center gap-2 py-2">
-          {winnerNames.length > 0 ? (
+          {winnerLabels.length > 0 ? (
             <>
               <Trophy className="h-5 w-5 text-amber-500" />
-              <span className="font-black text-lg text-slate-800">{winnerNames.join(' & ')}</span>
+              <span className="font-black text-lg text-slate-800">{winnerLabels.join(' & ')}</span>
             </>
           ) : (
             <span className="text-sm font-semibold italic text-slate-400">Winner pending</span>
@@ -498,12 +557,15 @@ function MatchCard({ match, unit, isAdmin, getLogoUrl, onUpdateScore, onAwardTea
   if (match.match_type === 'minigame') {
     const isBase = !match.team_set_id || match.team_set_id === 'base';
     const displayTeams = isBase ? unit.baseTeams : unit.teamSets?.find((ts: any) => ts.id === match.team_set_id)?.teams;
+    const groups = match.minigameGroups || [];
+    const groupedTeamIds = new Set(groups.flatMap((g: any) => g.teamIds));
+    const ungroupedTeams = displayTeams?.filter((team: any) => !groupedTeamIds.has(team.id));
 
     return (
       <div className={`rounded-xl border bg-white p-4 shadow-sm transition-all ${match.completed ? 'border-emerald-300 bg-emerald-50/20' : 'border-indigo-300 ring-2 ring-indigo-50'}`}>
         <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-slate-100 pb-3 text-xs text-slate-500">
           <span className="flex items-center gap-1.5 font-black text-indigo-700 uppercase tracking-wider bg-indigo-50 px-2 py-1 rounded">
-            <Users className="h-4 w-4" /> Mini-Games & Relays
+            <Users className="h-4 w-4" /> {match.home_team || 'Mini-Games & Relays'}
           </span>
           <span className="flex items-center gap-1 font-semibold text-slate-600"><CalendarDays className="h-3.5 w-3.5" /> {match.date_str}</span>
           <span className="flex items-center gap-1 font-semibold text-slate-600"><Clock className="h-3.5 w-3.5" /> {match.time}</span>
@@ -515,7 +577,45 @@ function MatchCard({ match, unit, isAdmin, getLogoUrl, onUpdateScore, onAwardTea
           )}
         </div>
         <div className="space-y-2 mt-3">
-          {displayTeams?.map((team: any) => {
+          {groups.map((g: any) => {
+            const count = match.awardedTeamCounts?.[g.teamIds[0]] || 0;
+            const memberNames = g.teamIds.map((id: number) => displayTeams?.find((t: any) => t.id === id)?.name).filter(Boolean).join(' + ');
+            return (
+              <div key={g.id} className="flex items-center justify-between bg-indigo-50 border border-indigo-200 p-2.5 rounded-lg shadow-sm">
+                <div>
+                  <span className="font-bold text-slate-800 text-sm flex items-center gap-1.5"><GitMerge className="h-3.5 w-3.5 text-indigo-500" /> {g.name}</span>
+                  <span className="text-[10px] text-slate-500">{memberNames}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {count > 0 && (
+                    <span className="flex items-center gap-1 bg-emerald-100 text-emerald-700 px-2 py-1 rounded-md text-xs font-black" title="Wins awarded for this event (credited to every team in this side)">
+                      <Trophy className="w-3 h-3" /> {count}
+                    </span>
+                  )}
+                  {editable && !match.completed && (
+                    <div className="flex items-center gap-1">
+                      {count > 0 && (
+                        <button
+                          onClick={() => g.teamIds.forEach((id: number) => onUnawardTeamWin(match.id, id))}
+                          title="Undo one award (for every team in this side)"
+                          className="flex h-7 w-7 items-center justify-center rounded-md bg-slate-100 text-slate-500 shadow-sm transition-all hover:bg-red-100 hover:text-red-600"
+                        >
+                          <Minus className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => g.teamIds.forEach((id: number) => onAwardTeamWin(match.id, id))}
+                        className="flex items-center gap-1 bg-amber-100 text-amber-700 hover:bg-amber-200 hover:scale-105 transition-all px-3 py-1.5 rounded-md text-xs font-black shadow-sm"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> 1 Win
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          {ungroupedTeams?.map((team: any) => {
             const count = match.awardedTeamCounts?.[team.id] || 0;
             return (
               <div key={team.id} className="flex items-center justify-between bg-slate-50 border border-slate-200 p-2.5 rounded-lg shadow-sm">
